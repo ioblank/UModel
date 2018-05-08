@@ -371,6 +371,7 @@ static void PrintUsage()
 			"    -view           (default) visualize object; when no <object> specified\n"
 			"                    will load whole package\n"
 			"    -list           list contents of package\n"
+			"    -save           save the specified packages\n"
 			"    -export         export specified object or whole package\n"
 			"    -taglist        list of tags to override game autodetection\n"
 			"    -version        display umodel version information\n"
@@ -470,6 +471,95 @@ static void PrintVersionInfo()
 /*-----------------------------------------------------------------------------
 	Package helpers
 -----------------------------------------------------------------------------*/
+
+static void CopyStream(FArchive *Src, FILE *Dst, int Count)
+{
+	byte buffer[16384];
+
+	while (Count > 0)
+	{
+		int Size = min(Count, sizeof(buffer));
+		Src->Serialize(buffer, Size);
+		if (fwrite(buffer, Size, 1, Dst) != 1) appError("Write failed");
+		Count -= Size;
+	}
+}
+
+bool SavePackages(const TArray<UnPackage*> *Packages, IProgressCallback* progress)
+{
+	guard(SavePackages);
+
+	appPrintf("Saving packages ...\n");
+
+	for (int i = 0; i < Packages->Num(); i++)
+	{
+		if (progress && !progress->Tick()) return false;
+		UnPackage* pkg = (*(Packages))[i];
+		const CGameFileInfo* file = appFindGameFile(pkg->Filename);
+		if (!file)
+		{
+			continue;
+		}
+
+		static const char* additionalExtensions[] =
+		{
+			"",				// empty string for original extension
+#if UNREAL4
+			".ubulk",
+			".uexp",
+#endif // UNREAL4
+		};
+
+		for (int ext = 0; ext < ARRAY_COUNT(additionalExtensions); ext++)
+		{
+			char SrcFile[MAX_PACKAGE_PATH];
+			appStrncpyz(SrcFile, pkg->Filename, ARRAY_COUNT(SrcFile));
+
+#if UNREAL4
+			if (ext > 0)
+			{
+				char* s = strrchr(SrcFile, '.');
+				if (s && !stricmp(s, ".uasset"))
+				{
+					// Find additional file by replacing .uasset extension
+					strcpy(s, additionalExtensions[ext]);
+					file = appFindGameFile(SrcFile);
+					if (!file)
+					{
+						continue;
+					}
+				}
+				else
+				{
+					// there's no needs to process this file anymore - main file was already exported, no other files will exist
+					break;
+				}
+			}
+#endif // UNREAL4
+
+			FArchive *Ar = appCreateFileReader(file);
+			if (Ar)
+			{
+				guard(SaveFile);
+				// prepare destination file
+				char OutFile[1024];
+				appSprintf(ARRAY_ARG(OutFile), "%s/%s", *GSettings.ExportPath, SrcFile);
+				appMakeDirectoryForFile(OutFile);
+				FILE *out = fopen(OutFile, "wb");
+				// copy data
+				CopyStream(Ar, out, Ar->GetFileSize());
+				// cleanup
+				delete Ar;
+				fclose(out);
+				unguardf("%s", file->RelativeName);
+			}
+		}
+	}
+
+	return true;
+
+	unguard;
+}
 
 // Export all loaded objects.
 bool ExportObjects(const TArray<UObject*> *Objects, IProgressCallback* progress)
@@ -804,6 +894,7 @@ int main(int argc, char **argv)
 		CMD_Check,
 		CMD_PkgInfo,
 		CMD_List,
+		CMD_Save,
 		CMD_Export,
 	};
 
@@ -828,6 +919,7 @@ int main(int argc, char **argv)
 			OPT_VALUE("view",    mainCmd, CMD_View)
 			OPT_VALUE("dump",    mainCmd, CMD_Dump)
 			OPT_VALUE("check",   mainCmd, CMD_Check)
+			OPT_VALUE("save",    mainCmd, CMD_Save)
 			OPT_VALUE("export",  mainCmd, CMD_Export)
 			OPT_VALUE("pkginfo", mainCmd, CMD_PkgInfo)
 			OPT_VALUE("list",    mainCmd, CMD_List)
@@ -1171,6 +1263,12 @@ int main(int argc, char **argv)
 			LoadWholePackage(Packages[pkg]);
 	}
 	UObject::EndLoad();
+
+	if (mainCmd == CMD_Save)
+	{
+		SavePackages(&Packages);
+		return 0;
+	}
 
 	if (!UObject::GObjObjects.Num() && !GApplication.GuiShown)
 	{

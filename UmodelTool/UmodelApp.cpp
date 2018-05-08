@@ -219,6 +219,11 @@ bool CUmodelApp::ShowPackageUI()
 					cancelled = true;
 					break;
 				}
+				if (!SavePackages(NULL, &progress))
+				{
+					cancelled = true;
+					break;
+				}
 				if (!ExportObjects(NULL, &progress))
 				{
 					cancelled = true;

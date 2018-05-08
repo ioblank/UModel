@@ -75,6 +75,7 @@ extern CUmodelApp GApplication;
 
 // Main.cpp functions
 void InitClassAndExportSystems(int Game);
+bool SavePackages(const TArray<UnPackage*> *Packages = NULL, IProgressCallback* progress = NULL);
 bool ExportObjects(const TArray<UObject*> *Objects = NULL, IProgressCallback* progress = NULL);
 void DisplayPackageStats(const TArray<UnPackage*> &Packages);
 

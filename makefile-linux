@@ -382,6 +382,7 @@ DEPENDS_10 = \
 	Core/Win32Types.h \
 	Exporters/Exporters.h \
 	UI/BaseDialog.h \
+	UI/callback.h \
 	UmodelTool/AboutDialog.h \
 	UmodelTool/Build.h \
 	UmodelTool/ErrorDialog.h \
@@ -406,8 +407,7 @@ DEPENDS_10 = \
 	Unreal/UnObject.h \
 	Unreal/UnPackage.h \
 	Unreal/UnrealClasses.h \
-	Viewers/ObjectViewer.h \
-	libs/include/callback.hpp
+	Viewers/ObjectViewer.h
 
 $(OUT_1)/UmodelApp.o : UmodelTool/UmodelApp.cpp $(DEPENDS_10)
 	$(CPP) $(OPT_MAIN) -o $(OUT_1)/UmodelApp.o UmodelTool/UmodelApp.cpp
@@ -871,13 +871,13 @@ DEPENDS_33 = \
 	Core/Win32Types.h \
 	UI/BaseDialog.h \
 	UI/FileControls.h \
+	UI/callback.h \
 	UmodelTool/Build.h \
 	UmodelTool/StartupDialog.h \
 	UmodelTool/UmodelSettings.h \
 	Unreal/GameDatabase.h \
 	Unreal/GameDefines.h \
-	Unreal/UnCore.h \
-	libs/include/callback.hpp
+	Unreal/UnCore.h
 
 $(OUT_1)/StartupDialog.o : UmodelTool/StartupDialog.cpp $(DEPENDS_33)
 	$(CPP) $(OPT_MAIN) -o $(OUT_1)/StartupDialog.o UmodelTool/StartupDialog.cpp
@@ -890,10 +890,10 @@ DEPENDS_34 = \
 	Core/Win32Types.h \
 	UI/BaseDialog.h \
 	UI/FileControls.h \
+	UI/callback.h \
 	UmodelTool/Build.h \
 	Unreal/GameDefines.h \
-	Unreal/UnCore.h \
-	libs/include/callback.hpp
+	Unreal/UnCore.h
 
 $(OUT_1)/FileControls.o : UI/FileControls.cpp $(DEPENDS_34)
 	$(CPP) $(OPT_MAIN) -o $(OUT_1)/FileControls.o UI/FileControls.cpp
@@ -905,6 +905,7 @@ DEPENDS_35 = \
 	Core/Math3D.h \
 	Core/Win32Types.h \
 	UI/BaseDialog.h \
+	UI/callback.h \
 	UmodelTool/AboutDialog.h \
 	UmodelTool/Build.h \
 	UmodelTool/MiscStrings.h \
@@ -915,8 +916,7 @@ DEPENDS_35 = \
 	Unreal/GameDefines.h \
 	Unreal/PackageUtils.h \
 	Unreal/UnCore.h \
-	Unreal/UnPackage.h \
-	libs/include/callback.hpp
+	Unreal/UnPackage.h
 
 $(OUT_1)/PackageDialog.o : UmodelTool/PackageDialog.cpp $(DEPENDS_35)
 	$(CPP) $(OPT_MAIN) -o $(OUT_1)/PackageDialog.o UmodelTool/PackageDialog.cpp
@@ -928,16 +928,15 @@ DEPENDS_36 = \
 	Core/Math3D.h \
 	Core/Win32Types.h \
 	UI/BaseDialog.h \
+	UI/callback.h \
 	UmodelTool/Build.h \
 	UmodelTool/ProgressDialog.h \
 	Unreal/GameDefines.h \
 	Unreal/PackageUtils.h \
-	Unreal/UnCore.h \
-	Unreal/UnObject.h \
-	libs/include/callback.hpp
+	Unreal/UnCore.h
 
-$(OUT_1)/ProgressDialog.o : UmodelTool/ProgressDialog.cpp $(DEPENDS_36)
-	$(CPP) $(OPT_MAIN) -o $(OUT_1)/ProgressDialog.o UmodelTool/ProgressDialog.cpp
+$(OUT_1)/PackageScanDialog.o : UmodelTool/PackageScanDialog.cpp $(DEPENDS_36)
+	$(CPP) $(OPT_MAIN) -o $(OUT_1)/PackageScanDialog.o UmodelTool/PackageScanDialog.cpp
 
 DEPENDS_37 = \
 	Core/Core.h \
@@ -946,15 +945,16 @@ DEPENDS_37 = \
 	Core/Math3D.h \
 	Core/Win32Types.h \
 	UI/BaseDialog.h \
+	UI/callback.h \
 	UmodelTool/Build.h \
 	UmodelTool/ProgressDialog.h \
 	Unreal/GameDefines.h \
 	Unreal/PackageUtils.h \
 	Unreal/UnCore.h \
-	libs/include/callback.hpp
+	Unreal/UnObject.h
 
-$(OUT_1)/PackageScanDialog.o : UmodelTool/PackageScanDialog.cpp $(DEPENDS_37)
-	$(CPP) $(OPT_MAIN) -o $(OUT_1)/PackageScanDialog.o UmodelTool/PackageScanDialog.cpp
+$(OUT_1)/ProgressDialog.o : UmodelTool/ProgressDialog.cpp $(DEPENDS_37)
+	$(CPP) $(OPT_MAIN) -o $(OUT_1)/ProgressDialog.o UmodelTool/ProgressDialog.cpp
 
 DEPENDS_38 = \
 	Core/Core.h \
@@ -963,10 +963,10 @@ DEPENDS_38 = \
 	Core/Math3D.h \
 	Core/Win32Types.h \
 	UI/BaseDialog.h \
+	UI/callback.h \
 	UmodelTool/Build.h \
 	Unreal/GameDefines.h \
-	Unreal/UnCore.h \
-	libs/include/callback.hpp
+	Unreal/UnCore.h
 
 $(OUT_1)/BaseDialog.o : UI/BaseDialog.cpp $(DEPENDS_38)
 	$(CPP) $(OPT_MAIN) -o $(OUT_1)/BaseDialog.o UI/BaseDialog.cpp
