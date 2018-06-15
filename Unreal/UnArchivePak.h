@@ -365,7 +365,7 @@ public:
 		if (info.Magic != PAK_FILE_MAGIC)		// no endian checking here
 			return false;
 
-		if (info.Version > PAK_LATEST)
+		if (info.Version > PAK_LATEST_PLUS_ONE)
 		{
 			appError("Pak file has unsupported version %d", info.Version);
 		}
