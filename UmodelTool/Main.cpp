@@ -543,7 +543,7 @@ bool SavePackages(const TArray<UnPackage*> *Packages, IProgressCallback* progres
 				guard(SaveFile);
 				// prepare destination file
 				char OutFile[1024];
-				appSprintf(ARRAY_ARG(OutFile), "%s/%s", *GSettings.ExportPath, SrcFile);
+				appSprintf(ARRAY_ARG(OutFile), "%s/%s", *GSettings.Export.ExportPath, SrcFile);
 				appMakeDirectoryForFile(OutFile);
 				FILE *out = fopen(OutFile, "wb");
 				// copy data
