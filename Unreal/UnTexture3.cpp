@@ -657,7 +657,7 @@ bool UTexture2D::LoadBulkTexture(const TArray<FTexture2DMipMap> &MipsArray, int 
 	// Here: data is either in TFC file or in other package
 	char bulkFileName[256];
 	bulkFileName[0] = 0;
-	if (stricmp(TextureFileCacheName, "None") != 0)
+	if (TextureFileCacheName != "None")
 	{
 		// TFC file is assigned
 		static const char* tfcExtensions[] = { "tfc", "xxx" };
@@ -696,12 +696,14 @@ bool UTexture2D::LoadBulkTexture(const TArray<FTexture2DMipMap> &MipsArray, int 
 		{
 			//!! check for presence of BULKDATA_PayloadAtEndOfFile flag
 			strcpy(bulkFileName, Package->Filename);
-			if (Mip.Data.BulkDataFlags & BULKDATA_PayloadInSeperateFile)
+			if (Mip.Data.BulkDataFlags & (BULKDATA_OptionalPayload|BULKDATA_PayloadInSeperateFile))
 			{
-				// UE4.12+, store bulk payload in .ubulk file
+				// UE4.12+ store bulk payload in .ubulk file (BULKDATA_PayloadInSeperateFile)
+				// UE4.20+ store bulk payload in .uptnl file (BULKDATA_OptionalPayload)
+				// It seems UE4 may store both flags, but priority is to BULKDATA_OptionalPayload.
 				char* s = strrchr(bulkFileName, '.');
-				if (s && !stricmp(s, ".uasset"))
-					strcpy(s, ".ubulk");
+				assert(s);
+				strcpy(s, (Mip.Data.BulkDataFlags & BULKDATA_OptionalPayload) ? ".uptnl" : ".ubulk");
 			}
 		}
 		else
@@ -771,7 +773,7 @@ bool UTexture2D::LoadBulkTexture(const TArray<FTexture2DMipMap> &MipsArray, int 
 	delete Ar;
 	return true;
 
-	unguardf("File=%s", bulkFile ? bulkFile->RelativeName : "none");
+	unguardf("File=%s Mip=%d", bulkFile ? bulkFile->RelativeName : "none", MipIndex);
 }
 
 
@@ -839,7 +841,7 @@ bool UTexture2D::GetTextureData(CTextureData &TexData) const
 	}
 #endif // TRIBES4
 
-	ETexturePixelFormat intFormat;
+	ETexturePixelFormat intFormat = TPF_UNKNOWN;
 	if (Format == PF_A8R8G8B8 || Format == PF_B8G8R8A8)	// PF_A8R8G8B8 was renamed to PF_B8G8R8A8
 		intFormat = TPF_BGRA8;
 	else if (Format == PF_DXT1)
@@ -852,6 +854,8 @@ bool UTexture2D::GetTextureData(CTextureData &TexData) const
 		intFormat = TPF_G8;
 	else if (Format == PF_V8U8)
 		intFormat = TPF_V8U8;
+	else if (Format == PF_BC4)
+		intFormat = TPF_BC4;
 	else if (Format == PF_BC5)
 		intFormat = TPF_BC5;
 	else if (Format == PF_BC6H)
@@ -894,11 +898,6 @@ bool UTexture2D::GetTextureData(CTextureData &TexData) const
 		intFormat = TPF_ASTC_12x12;
 #endif // SUPPORT_ANDROID
 #endif // UNREAL4
-	else
-	{
-		appNotify("Unknown texture format: %s (%d)", TexData.OriginalFormatName, Format);
-		return false;
-	}
 
 	const TArray<FTexture2DMipMap> *MipsArray = &Mips;
 	const char* tfcSuffix = NULL;
@@ -932,7 +931,7 @@ bool UTexture2D::GetTextureData(CTextureData &TexData) const
 	}
 #endif // SUPPORT_ANDROID
 
-	if (TexData.Mips.Num() == 0 && MipsArray->Num())
+	if (TexData.Mips.Num() == 0 && MipsArray->Num() && intFormat != TPF_UNKNOWN)
 	{
 		bool bulkFailed = false;
 		bool dataLoaded = false;
@@ -978,6 +977,26 @@ bool UTexture2D::GetTextureData(CTextureData &TexData) const
 		}
 	}
 
+	if (TexData.Mips.Num() == 0 && SourceArt.BulkData && Source.bPNGCompressed)
+	{
+		// The texture is encoded only in nSourceArt format (probably this is only UE4, not UE3 case)
+		CMipMap* DstMip = new (TexData.Mips) CMipMap;
+		DstMip->CompressedData = SourceArt.BulkData;
+		DstMip->DataSize = SourceArt.ElementCount * SourceArt.GetElementSize();
+		DstMip->ShouldFreeData = false;
+		DstMip->USize = Source.SizeX;
+		DstMip->VSize = Source.SizeY;
+		TexData.Platform = Package->Platform;
+//		printf("Source png texture %dx%d\n", Source.SizeX, Source.SizeY);
+		intFormat = TPF_PNG_BGRA;
+	}
+
+	if (intFormat == TPF_UNKNOWN)
+	{
+		appNotify("Unknown texture format: %s (%d)", TexData.OriginalFormatName, Format);
+		return false;
+	}
+
 	// Older Android and iOS UE3 versions didn't have dedicated CachedETCMips etc, all data were stored in Mips, but with different format
 #if SUPPORT_IPHONE
 	if (Package->Platform == PLATFORM_IOS && Mips.Num())
@@ -1016,6 +1035,21 @@ bool UTexture2D::GetTextureData(CTextureData &TexData) const
 		}
 	}
 #endif // SUPPORT_XBOX360
+
+#if SUPPORT_PS4
+	if (TexData.Platform == PLATFORM_PS4)
+	{
+		for (int MipLevel = 0; MipLevel < TexData.Mips.Num(); MipLevel++)
+		{
+			if (!TexData.DecodePS4(MipLevel))
+			{
+				// failed to decode this mip
+				TexData.Mips.RemoveAt(MipLevel, TexData.Mips.Num() - MipLevel);
+				break;
+			}
+		}
+	}
+#endif // SUPPORT_PS4
 
 	return (TexData.Mips.Num() > 0);
 

@@ -562,7 +562,7 @@ void FFileArchive::Close()
 	}
 }
 
-bool FFileArchive::OpenFile(const char *Mode)
+bool FFileArchive::OpenFile()
 {
 	guard(FFileArchive::OpenFile);
 	assert(!IsOpen());
@@ -572,9 +572,18 @@ bool FFileArchive::OpenFile(const char *Mode)
 	BufferPos = 0;
 	BufferSize = 0;
 
+	char Mode[4];
+	char* s = Mode;
+	*s++ = IsLoading ? 'r' : 'w';
+	if (!(Options & FAO_TextFile))
+	{
+		*s++ = 'b';
+	}
+	*s++ = 0;
+
 	f = fopen64(FullName, Mode);
 	if (f) return true;			// success
-	if (!(Options & FRO_NoOpenError))
+	if (!(Options & FAO_NoOpenError))
 		appError("Unable to open file %s", FullName);
 
 	return false;
@@ -582,7 +591,7 @@ bool FFileArchive::OpenFile(const char *Mode)
 }
 
 FFileReader::FFileReader(const char *Filename, unsigned InOptions)
-:	FFileArchive(Filename, Options)
+:	FFileArchive(Filename, InOptions)
 {
 	guard(FFileReader::FFileReader);
 	IsLoading = true;
@@ -662,7 +671,7 @@ void FFileReader::Serialize(void *data, int size)
 
 bool FFileReader::Open()
 {
-	return OpenFile("rb");
+	return OpenFile();
 }
 
 int64 FFileReader::GetFileSize64() const
@@ -686,8 +695,8 @@ int64 FFileReader::GetFileSize64() const
 
 static TArray<FFileWriter*> GFileWriters;
 
-FFileWriter::FFileWriter(const char *Filename, unsigned Options)
-:	FFileArchive(Filename, Options)
+FFileWriter::FFileWriter(const char *Filename, unsigned InOptions)
+:	FFileArchive(Filename, InOptions)
 {
 	guard(FFileWriter::FFileWriter);
 	IsLoading = false;
@@ -780,7 +789,7 @@ bool FFileWriter::Open()
 	Buffer = (byte*)appMalloc(FILE_BUFFER_SIZE);
 	BufferPos = 0;
 	BufferSize = 0;
-	return OpenFile("wb");
+	return OpenFile();
 }
 
 void FFileWriter::Close()
@@ -1010,7 +1019,7 @@ void FByteBulkData::SerializeHeader(FArchive &Ar)
 
 		BulkDataFlags = 4;						// unknown
 		BulkDataSizeOnDisk = INDEX_NONE;
-		int EndPosition;
+		int32 EndPosition;
 		Ar << EndPosition;
 		if (Ar.ArVer >= 254)
 			Ar << BulkDataSizeOnDisk;
@@ -1040,14 +1049,15 @@ void FByteBulkData::SerializeHeader(FArchive &Ar)
 		// read header
 		Ar << BulkDataFlags << ElementCount;
 		assert(Ar.IsLoading);
-		int tmpBulkDataOffsetInFile32;
+		int32 tmpBulkDataOffsetInFile32;
+
 #if MKVSDC
 		if (Ar.Game == GAME_MK && Ar.ArVer >= 677)
 		{
 			// MK X has 64-bit offset and size fields
 			int64 tmpBulkDataSizeOnDisk64;
 			Ar << tmpBulkDataSizeOnDisk64 << BulkDataOffsetInFile;
-			BulkDataSizeOnDisk = (int)tmpBulkDataSizeOnDisk64;
+			BulkDataSizeOnDisk = (int32)tmpBulkDataSizeOnDisk64;
 			goto header_done;
 		}
 #endif // MKVSDC
@@ -1059,12 +1069,41 @@ void FByteBulkData::SerializeHeader(FArchive &Ar)
 			goto header_done;
 		}
 #endif // BATMAN
+#if ROCKET_LEAGUE
+		if (Ar.Game == GAME_RocketLeague && Ar.ArLicenseeVer >= 20)
+		{
+			Ar << BulkDataSizeOnDisk;
+
+			// Offset only serialized with BULKDATA_StoreInSeparateFile
+			if (BulkDataFlags & BULKDATA_StoreInSeparateFile)
+			{
+				// 64-bit in LicenseeVer >= 22
+				if (Ar.ArLicenseeVer >= 22)
+				{
+					Ar << BulkDataOffsetInFile;
+				}
+				else
+				{
+					Ar << tmpBulkDataOffsetInFile32;
+					BulkDataOffsetInFile = tmpBulkDataOffsetInFile32;
+				}
+			}
+			else
+			{
+				BulkDataOffsetInFile = Ar.Tell();
+			}
+
+			goto header_done;
+		}
+#endif // ROCKET_LEAGUE
+
 		Ar << BulkDataSizeOnDisk << tmpBulkDataOffsetInFile32;
 		BulkDataOffsetInFile = tmpBulkDataOffsetInFile32;		// sign extend to allow non-standard TFC systems which uses '-1' in this field
+
 #if TRANSFORMERS
 		if (Ar.Game == GAME_Transformers && Ar.ArLicenseeVer >= 128)
 		{
-			int BulkDataKey;
+			int32 BulkDataKey;
 			Ar << BulkDataKey;
 		}
 #endif // TRANSFORMERS
@@ -1115,10 +1154,12 @@ void FByteBulkData::Serialize(FArchive &Ar)
 
 	if (Ar.Game >= GAME_UE4_BASE)
 	{
-		if (BulkDataFlags & BULKDATA_PayloadInSeperateFile)
+		if (BulkDataFlags & (BULKDATA_OptionalPayload|BULKDATA_PayloadInSeperateFile))
 		{
 #if DEBUG_BULK
-			appPrintf("data in .ubulk file (flags=%X, pos=%llX+%X)\n", BulkDataFlags, BulkDataOffsetInFile, BulkDataSizeOnDisk);
+			appPrintf("data in %s file (flags=%X, pos=%llX+%X)\n",
+				(BulkDataFlags & BULKDATA_OptionalPayload) ? ".uptnl" : ".ubulk",
+				BulkDataFlags, BulkDataOffsetInFile, BulkDataSizeOnDisk);
 #endif
 			return;
 		}

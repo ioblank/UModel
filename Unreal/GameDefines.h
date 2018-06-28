@@ -36,10 +36,11 @@
 #define UC1				1
 #define UC2				1
 
-// requires UNREAL3
+// platforms, UE3+
 #define SUPPORT_XBOX360	1		// XBox360 support
 #define SUPPORT_IPHONE	1		// iPhone/iPad support
 #define SUPPORT_ANDROID	1		// Android support
+#define SUPPORT_PS4		1		// Playstation 4 support
 
 #define ENDWAR			1		// EndWar
 #define BIOSHOCK		1		//!! requires UNREAL3 and TRIBES3
@@ -112,6 +113,7 @@
 #define SMITE			1
 #define DUNDEF			1		// Dungeon Defenders
 #define DEVILS_THIRD	1		// Devil's Third
+#define ROCKET_LEAGUE	1		// Rocket League
 //#define USE_XDK			1		// use some proprietary code for XBox360 support
 
 // Midway UE3 games -- make common define ??
@@ -126,7 +128,10 @@
 #define FRIDAY13		1		// Friday the 13th: The Game
 #define TEKKEN7			1		// Tekken 7
 #define LAWBREAKERS		1		// Lawbreakers
+#define SOD2			1		// State of Decay 2
+#define DAUNTLESS		1		// Dauntless
 #define PARAGON			1		// Paragon
+#define ARK				1		// Ark: Survival Evolved
 #define HIT				1		// Heroes of Incredible Tales
 
 #define SPECIAL_TAGS	1		// games with different PACKAGE_FILE_TAG

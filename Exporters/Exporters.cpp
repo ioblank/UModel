@@ -358,10 +358,10 @@ FArchive *CreateExportArchive(const UObject *Obj, const char *fmt, ...)
 //	appPrintf("... writing %s'%s' to %s ...\n", Obj->GetClassName(), Obj->Name, filename);
 
 	appMakeDirectoryForFile(filename);
-	FFileWriter *Ar = new FFileWriter(filename, FRO_NoOpenError);
+	FFileWriter *Ar = new FFileWriter(filename, FAO_NoOpenError);
 	if (!Ar->IsOpen())
 	{
-		appPrintf("Error opening file \"%s\" ...\n", filename);
+		appPrintf("Error creating file \"%s\" ...\n", filename);
 		delete Ar;
 		return NULL;
 	}

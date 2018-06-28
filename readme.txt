@@ -164,6 +164,10 @@ zlib data compression library
   (c) Jean-loup Gailly and Mark Adler
   http://zlib.net/
 
+libpng
+  (c) Glenn Randers-Pehrson
+  http://www.libpng.org/
+
 LZO data compression library
   (c) Markus F.X.J. Oberhumer
   http://www.oberhumer.com/opensource/lzo/
@@ -195,7 +199,49 @@ detex
 
 Changes
 ~~~~~~~
-01.04.2018
+28.06.2018
+- heavily optimized memory used by animations
+
+24.06.2018
+- fixed loading of UE4 .umap files
+- initial support for UE4.20
+
+23.06.2018
+- optimized amount of memory used for UE4 animations
+
+21.06.2018
+- added configuration file (umodel.cfg) and options window
+
+19.06.2018
+- added Playstation 4 platform support, activated with -ps4 command line or in GUI; credit for texture
+  decoding is m0xf (http://www.gildor.org/smf/index.php/topic,6221.0.html)
+
+14.06.2018
+- added Rocket League support, contributed by AltimorTASDK (https://github.com/gildor2/UModel/pull/73)
+
+06.06.2018
+- added PF_BC4 texture format support
+- fixed a bug: materials and referenced textures weren't exported when UModel failed to recognize at least one
+  texture parameter
+
+04.06.2018
+- added State of Decay 2 SkeletalMesh support, requires game override (-game=sod2)
+- linux: saving all files to the user's home (~/) directory by default
+
+29.05.2018
+- fixed incompatibilities with Ark: Survival Evolved and Dauntless, both games requires explicit game override
+
+19.05.2018
+- implemented support for loading of UE3 and UE4 png-compressed textures
+
+16.05.2018
+- added functionality which finds all animations for currectly opened UE4 SkeletalMesh, accessible with Ctrl+A
+  key or via "SkeletalMesh | Find animations" menu
+
+13.05.2018
+- added viewer menu with object-specific actions
+
+01.05.2018
 - added UE4.20 pak file support
 
 20.04.2018

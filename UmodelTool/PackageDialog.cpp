@@ -5,6 +5,7 @@
 #include "PackageDialog.h"
 #include "PackageScanDialog.h"
 #include "ProgressDialog.h"
+#include "SettingsDialog.h"
 #include "AboutDialog.h"
 
 #include "UnPackage.h"
@@ -81,7 +82,7 @@ public:
 	,	StripPath(InStripPath)
 	{
 		AllowMultiselect();
-		SetVirtualMode();		//!! TODO: use callbacks to retrieve item texts
+		SetVirtualMode();
 		// Add columns
 		//?? right-align text in numeric columns
 		AddColumn("Package name");
@@ -295,12 +296,6 @@ void UIPackageDialog::SelectPackage(UnPackage* package)
 	}
 }
 
-static bool PackageListEnum(const CGameFileInfo *file, TArray<const CGameFileInfo*> &param)
-{
-	param.Add(file);
-	return true;
-}
-
 void UIPackageDialog::InitUI()
 {
 	guard(UIPackageDialog::InitUI);
@@ -345,8 +340,13 @@ void UIPackageDialog::InitUI()
 
 	if (!Packages.Num())
 	{
-		// not scanned yet
-		appEnumGameFiles(PackageListEnum, Packages);
+		// package list was not filled yet
+		appEnumGameFiles<TArray<const CGameFileInfo*> >( // won't compile with lambda without explicitly providing template argument
+			[](const CGameFileInfo* file, TArray<const CGameFileInfo*>& param) -> bool
+			{
+				param.Add(file);
+				return true;
+			}, Packages);
 	}
 
 	// add paths of all found packages to the directory tree
@@ -402,6 +402,9 @@ void UIPackageDialog::InitUI()
 		.Enable(SelectedPackages.Num() > 0)
 		.SetCallback(BIND_MEMBER(&UIPackageDialog::SavePackages, this))
 		.Expose(SavePackagesMenu)
+		+ NewMenuSeparator()
+		+ NewMenuItem("Options")
+		.SetCallback(BIND_LAMBDA([]() { UISettingsDialog dialog(GSettings); dialog.Show(); }))
 		+ NewMenuSeparator()
 		+ NewMenuItem("About UModel")
 		.SetCallback(BIND_STATIC(&UIAboutDialog::Show))
@@ -585,7 +588,7 @@ struct PackageSortHelper
 static bool PackageSort_Reverse;
 static int  PackageSort_Column;
 
-static int PackageSortFunction(const PackageSortHelper* const pA, const PackageSortHelper* const pB)
+static int PackageSortFunction(const PackageSortHelper* pA, const PackageSortHelper* pB)
 {
 	const CGameFileInfo* A = pA->File;
 	const CGameFileInfo* B = pB->File;
@@ -662,64 +665,26 @@ void UIPackageDialog::SortPackages()
 	Content tools
 -----------------------------------------------------------------------------*/
 
-static void ScanPackageExports(UnPackage* package, CGameFileInfo* file)
-{
-	for (int idx = 0; idx < package->Summary.ExportCount; idx++)
-	{
-		const char* ObjectClass = package->GetObjectName(package->GetExport(idx).ClassIndex);
-
-		if (!stricmp(ObjectClass, "SkeletalMesh") || !stricmp(ObjectClass, "DestructibleMesh"))
-			file->NumSkeletalMeshes++;
-		else if (!stricmp(ObjectClass, "StaticMesh"))
-			file->NumStaticMeshes++;
-		else if (!stricmp(ObjectClass, "Animation") || !stricmp(ObjectClass, "MeshAnimation") || !stricmp(ObjectClass, "AnimSequence")) // whole AnimSet count for UE2 and number of sequences for UE3+
-			file->NumAnimations++;
-		else if (!strnicmp(ObjectClass, "Texture", 7))
-			file->NumTextures++;
-	}
-}
-
-
 void UIPackageDialog::ScanContent()
 {
 	UIProgressDialog progress;
 	progress.Show("Scanning packages");
 	progress.SetDescription("Scanning package");
 
-	bool cancelled = false;
-	int lastTick = appMilliseconds();
-	for (int i = 0; i < Packages.Num(); i++)
-	{
-		CGameFileInfo* file = const_cast<CGameFileInfo*>(Packages[i]);		// we'll modify this structure here
-		if (file->PackageScanned) continue;
-
-		// Update progress dialog
-		int tick = appMilliseconds();
-		if (tick - lastTick > 50)				// do not update too often
-		{
-			if (!progress.Progress(file->RelativeName, i, GNumPackageFiles))
-			{
-				cancelled = true;
-				break;
-			}
-			lastTick = tick;
-		}
-
-		UnPackage* package = UnPackage::LoadPackage(file->RelativeName, /*silent=*/ true);	// should always return non-NULL
-		file->PackageScanned = true;
-		if (!package) continue;		// should not happen
-
-		ScanPackageExports(package, file);
-	}
+	// perform scan
+	bool done = ::ScanContent(Packages, &progress);
 
 	progress.CloseDialog();
-	if (cancelled) return;
-	ContentScanned = true;
 
+	if (done)
+	{
+		// finished - no needs to perform scan again, disable button
+		ContentScanned = true;
+		ScanContentMenu->Enable(false);
+	}
+
+	// Refresh package list anyway, even for partially scanned content
 	SortPackages();
-
-	// finished - no needs to perform scan again, disable button
-	ScanContentMenu->Enable(false);
 
 	// update package list with new data
 	UpdateSelectedPackages();
@@ -774,6 +739,7 @@ void UIPackageDialog::SavePackages()
 #if UNREAL4
 			".ubulk",
 			".uexp",
+			".uptnl",
 #endif // UNREAL4
 		};
 
@@ -785,7 +751,7 @@ void UIPackageDialog::SavePackages()
 			{
 				appStrncpyz(SrcFile, SelectedPackages[i]->RelativeName, ARRAY_COUNT(SrcFile));
 				char* s = strrchr(SrcFile, '.');
-				if (s && !stricmp(s, ".uasset"))
+				if (s && (stricmp(s, ".uasset") == 0 || stricmp(s, ".umap") == 0))
 				{
 					// Find additional file by replacing .uasset extension
 					strcpy(s, additionalExtensions[ext]);

@@ -1,5 +1,9 @@
 #!/bin/bash
 
+S_RED="\033[1;31m"
+S_GREEN="\033[1;32m"
+S_DEFAULT="\033[0m"
+
 function usage()
 {
 	cat <<EOF
@@ -76,7 +80,7 @@ function CheckDir()
 		shift
 	done
 	# error
-	echo "ERROR: the game was not found at ($checkedDirs)"
+	echo -e "${S_RED}ERROR: the game was not found at ($checkedDirs)${S_DEFAULT}"
 	exit
 }
 
@@ -87,16 +91,19 @@ function console_title()
 	[ -t 1 ] && echo -en "\033]2;$@\007"
 }
 
+# Note: we're using '"$@"' - i.e. quoted array expansion $@, so it will preserve quotes.
+# http://mywiki.wooledge.org/BashFAQ/050#I.27m_constructing_a_command_based_on_information_that_is_only_known_at_run_time
+
 function run()
 {
 	if [ "$foundPath" ]; then
 		console_title "$exe -path="$foundPath" $@"
-		echo "Starting $exe -path="$foundPath" $@"
-		./$exe -path="$foundPath" $debugOpt $@
+		echo -e "${S_GREEN}Starting $exe -path="$foundPath" $@${S_DEFAULT}"
+		./$exe -path="$foundPath" $debugOpt "$@"
 	else
 		console_title "$exe $debugOpt $@"
-		echo "Starting $exe $debugOpt $@"
-		./$exe $debugOpt $@
+		echo -e "${S_GREEN}Starting $exe $debugOpt $@${S_DEFAULT}"
+		./$exe $debugOpt "$@"
 	fi
 }
 
@@ -119,7 +126,7 @@ function run1()
 	esac
 
 	shift
-	run $*
+	run "$@"
 }
 
 
@@ -226,8 +233,8 @@ function bat3()
 }
 function tr4()    { run1 "data/3/Tribes4" $*;     }
 function thief()  { run1 "${steam[@]/%/Thief/ThiefGame/CookedPCNG}" $*; }
-function ark()    { run1 "${steam[@]/%/ARK/ShooterGame/Content}" -game=ue4.6 $*; }
-function lawbr    { run1 "${steam[@]/%/LawBreakers/ShooterGame/Content/Paks}" -game=lawbr $*; }
+function ark()    { run1 "${steam[@]/%/ARK/ShooterGame/Content}" -game=ark $*; }
+function lawbr()  { run1 "${steam[@]/%/LawBreakers/ShooterGame/Content/Paks}" -game=lawbr $*; }
 
 function rund()   {	run1 "data" $*; }
 
@@ -285,7 +292,7 @@ fi
 for arg in $*; do
 	case $arg in
 	-path=*)
-		DBG "'-path' is specified"
+		DBG "'-path' is specified: " ${arg:6}
 		path=1
 		;;
 	esac
@@ -313,7 +320,12 @@ if [ $# -gt 0 ] || [ "$cmd" ] || [ $path != 0 ]; then
 		args[${#args[@]}]="$value"	# add value to array
 		shift
 	done
-	eval $cmd ${args[*]}			# execute command
+	if [ "`type -t $cmd`" != "function" ]; then
+		echo -e "${S_RED}Unknown command: $cmd${S_DEFAULT}"
+	else
+#		eval $cmd "$args[@]"		# execute command
+		$cmd "${args[@]}"			# execute command
+	fi
 	exit
 fi
 

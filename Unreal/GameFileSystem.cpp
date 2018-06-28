@@ -103,6 +103,7 @@ static const char *KnownExtensions[] =
 #	if UNREAL4
 	"ubulk",		// separately stored UE4 bulk data
 	"uexp",			// object's data cut from UE4 package when Event Driven Loader is used
+	"uptnl",		// optional ubulk
 #	endif
 #if GEARS4
 	"bundle",
@@ -139,7 +140,7 @@ static TArray<CGameFileInfo*> GameFiles;
 int GNumPackageFiles = 0;
 int GNumForeignFiles = 0;
 
-#define GAME_FILE_HASH_SIZE		4096
+#define GAME_FILE_HASH_SIZE		16384
 #define GAME_FILE_HASH_MASK		(GAME_FILE_HASH_SIZE-1)
 
 //#define PRINT_HASH_DISTRIBUTION	1
@@ -451,9 +452,9 @@ static bool ScanGameDirectory(const char *dir, bool recurse)
 #endif
 
 	// Register files in sorted order - should be done for pak files, so patches will work.
-	Filenames.Sort([](const FStaticString<256>* p1, const FStaticString<256>* p2) -> int
+	Filenames.Sort([](const FStaticString<256>& p1, const FStaticString<256>& p2) -> int
 		{
-			return stricmp(*(*p1), *(*p2)) > 0;
+			return stricmp(*p1, *p2) > 0;
 		});
 
 	for (int i = 0; i < Filenames.Num(); i++)
@@ -492,7 +493,7 @@ void appSetRootDirectory(const char *dir, bool recurse)
 	}
 #endif // GEARS4
 
-	appPrintf("Found %d game files (%d skipped)\n", GameFiles.Num(), GNumForeignFiles);
+	appPrintf("Found %d game files (%d skipped) at path \"%s\"\n", GameFiles.Num(), GNumForeignFiles, dir);
 
 #if UNREAL4
 	// Should process .uexp and .ubulk files, register their information for .uasset
@@ -502,7 +503,7 @@ void appSetRootDirectory(const char *dir, bool recurse)
 		char SrcFile[MAX_PACKAGE_PATH];
 		appStrncpyz(SrcFile, info->RelativeName, ARRAY_COUNT(SrcFile));
 		char* s = strrchr(SrcFile, '.');
-		if (s && !stricmp(s, ".uasset"))
+		if (s && (stricmp(s, ".uasset") == 0 || stricmp(s, ".umap") == 0))
 		{
 			static const char* additionalExtensions[] =
 			{
@@ -629,6 +630,7 @@ void appSetRootDirectory2(const char *filename)
 				"PC",
 				"XBox360",
 				"PS3",
+				"PS4",
 				"iPhone",
 				"Android",
 			};
@@ -724,12 +726,19 @@ const CGameFileInfo *appFindGameFile(const char *Filename, const char *Ext)
 		// Short filename matched, now compare path before the filename.
 		// Assume 'ShortFilename' is part of 'buf' and 'info->ShortFilename' is part of 'info->RelativeName'.
 		int matchWeight = 0;
-		const char *s = ShortFilename;
-		const char *d = info->ShortFilename;
-		while (--s >= buf && --d >= info->RelativeName)
+		const char *s = ShortFilename - 1;
+		const char *d = info->ShortFilename - 1;
+		while (s >= buf && d >= info->RelativeName && *s == *d)
 		{
-			if (*s != *d) break;
 			matchWeight++;
+			// don't include pointer decrements into the loop condition, so both pointers will always be decremented
+			s--;
+			d--;
+		}
+		if ((s < buf) && (d < info->RelativeName))
+		{
+			// Both 's' and 'd' pointes beyond buffers, i.e. we have found an exact match
+			return info;
 		}
 //		printf("--> matched: %s (weight=%d)\n", info->RelativeName, matchWeight);
 		if (matchWeight > bestMatchWeight)
