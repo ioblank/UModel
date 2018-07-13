@@ -16,6 +16,7 @@
 
 #include "BaseDialog.h"
 
+//#define NEW_LAYOUT_CODE		1
 
 /* Useful links:
 
@@ -51,47 +52,10 @@
 
 #if HAS_UI
 
-#define DEBUG_LAYOUT				0
-
-#if DEBUG_LAYOUT
-#define DBG_LAYOUT(...)				appPrintf(__VA_ARGS__)
-#else
-#define DBG_LAYOUT(...)
-#endif
-
 //#define DEBUG_WINDOWS_ERRORS		MAX_DEBUG
-
 //#define DEBUG_MULTILIST_SEL			1
-#define USE_EXPLORER_STYLE			1		// use modern control style whenever possible
 
-
-#define FIRST_DIALOG_ID				4000
-#define FIRST_MENU_ID				8000
-
-#define VERTICAL_SPACING			4
-#define HORIZONTAL_SPACING			8
-
-#define DEFAULT_VERT_BORDER			13
-#define DEFAULT_HORZ_BORDER			7
-
-#define DEFAULT_LABEL_HEIGHT		14
-#define DEFAULT_PROGRESS_BAR_HEIGHT	18
-#define DEFAULT_BUTTON_HEIGHT		20
-#define DEFAULT_CHECKBOX_HEIGHT		18
-#define DEFAULT_EDIT_HEIGHT			20
-#define DEFAULT_COMBOBOX_HEIGHT		20
-#define DEFAULT_COMBOBOX_LIST_HEIGHT 200	// height of combobox dropdown list
-#define DEFAULT_LISTBOX_HEIGHT		-1
-#define DEFAULT_TREEVIEW_HEIGHT		-1
-#define DEFAULT_TREE_ITEM_HEIGHT	0
-
-#define GROUP_INDENT				10
-#define GROUP_MARGIN_TOP			16
-#define GROUP_MARGIN_BOTTOM			7
-#define GROUP_INDENT				10
-
-#define MAX_TITLE_LEN				256
-
+#include "UIPrivate.h"
 
 #if _WIN32
 
@@ -110,10 +74,12 @@ static HINSTANCE hInstance;
 -----------------------------------------------------------------------------*/
 
 UIElement::UIElement()
-:	X(-1)
-,	Y(-1)
-,	Width(-1)
-,	Height(-1)
+:	Layout(-1, -1, -1, -1)
+,	Rect(-1, -1, -1, -1)
+,	MinWidth(0)
+,	MinHeight(0)
+,	TopMargin(0)
+,	BottomMargin(0)
 ,	IsGroup(false)
 ,	IsRadioButton(false)
 ,	Enabled(true)
@@ -179,10 +145,10 @@ void UIElement::UpdateVisible()
 
 UIElement& UIElement::SetRect(int x, int y, int width, int height)
 {
-	if (x != -1)      X = x;
-	if (y != -1)      Y = y;
-	if (width != -1)  Width = width;
-	if (height != -1) Height = height;
+	if (x != -1)      Layout.X = x;
+	if (y != -1)      Layout.Y = y;
+	if (width != -1)  Layout.Width = width;
+	if (height != -1) Layout.Height = height;
 	return *this;
 }
 
@@ -245,7 +211,9 @@ void UIElement::MeasureTextVSize(const char* text, int* width, int* height, HWND
 //		if (w == -1 && (Parent->Flags & GROUP_HORIZONTAL_LAYOUT))
 //			w = Parent->AutoWidth;
 //		else
-			w = int(DecodeWidth(w) * Parent->Width); //!! see parentWidth in AllocateUISpace()
+		//!! NOTE: using Parent->Rect.Width, because Parent->Layout.Width may be set to non-absolute
+		//!! value. So it is assumed that this code will be run after UpdateLayout called for parent
+			w = int(DecodeWidth(w) * Parent->Rect.Width); //!! see parentWidth in AllocateUISpace()
 	}
 
 	// set dialog's font for DC
@@ -268,10 +236,10 @@ void UIElement::MeasureTextVSize(const char* text, int* width, int* height, HWND
 HWND UIElement::Window(const char* className, const char* text, DWORD style, DWORD exstyle, UIBaseDialog* dialog,
 	int id, int x, int y, int w, int h)
 {
-	if (x == -1) x = X;
-	if (y == -1) y = Y;
-	if (w == -1) w = Width;
-	if (h == -1) h = Height;
+	if (x == -1) x = Rect.X;
+	if (y == -1) y = Rect.Y;
+	if (w == -1) w = Rect.Width;
+	if (h == -1) h = Rect.Height;
 	if (id == -1) id = Id;
 
 	HWND dialogWnd = dialog->GetWnd();
@@ -290,10 +258,10 @@ HWND UIElement::Window(const char* className, const char* text, DWORD style, DWO
 HWND UIElement::Window(const wchar_t* className, const wchar_t* text, DWORD style, DWORD exstyle, UIBaseDialog* dialog,
 	int id, int x, int y, int w, int h)
 {
-	if (x == -1) x = X;
-	if (y == -1) y = Y;
-	if (w == -1) w = Width;
-	if (h == -1) h = Height;
+	if (x == -1) x = Rect.X;
+	if (y == -1) y = Rect.Y;
+	if (w == -1) w = Rect.Width;
+	if (h == -1) h = Rect.Height;
 	if (id == -1) id = Id;
 
 	HWND dialogWnd = dialog->GetWnd();
@@ -346,27 +314,26 @@ UIElement& operator+(UIElement& elem, UIElement& next)
 
 UISpacer::UISpacer(int size)
 {
-	Width = (size != 0) ? size : HORIZONTAL_SPACING;	// use size==-1 for automatic width (for horizontal layout)
-	Height = (size > 0) ? size : VERTICAL_SPACING;
+	Layout.Width = (size != 0) ? size : HORIZONTAL_SPACING;	// use size==-1 for automatic width (for horizontal layout)
+	Layout.Height = (size > 0) ? size : VERTICAL_SPACING;
 }
 
-void UISpacer::Create(UIBaseDialog* dialog)
+void UISpacer::UpdateLayout(UILayoutHelper* layout)
 {
-	assert(Parent->UseAutomaticLayout());
-	if (Parent->UseVerticalLayout())
+	assert(layout->UseAutomaticLayout());
+	if (layout->UseVerticalLayout())
 	{
-		Parent->AddVerticalSpace(Height);
+		layout->AddVertSpace(Layout.Height);
+	}
+	else if (Layout.Width > 0)
+	{
+		// Simple case: Width is absolute value
+		layout->AddHorzSpace(Layout.Width);
 	}
 	else
 	{
-		if (Width > 0)
-		{
-			Parent->AddHorizontalSpace(Width);
-		}
-		else
-		{
-			Parent->AllocateUISpace(X, Y, Width, Height);
-		}
+		// More complex, spacer with fractional width
+		layout->AddControl(this);
 	}
 }
 
@@ -377,14 +344,18 @@ void UISpacer::Create(UIBaseDialog* dialog)
 
 UIHorizontalLine::UIHorizontalLine()
 {
-	Width = -1;
-	Height = 2;
+	Layout.Width = -1;
+	Layout.Height = 2;
 }
 
 void UIHorizontalLine::Create(UIBaseDialog* dialog)
 {
-	Parent->AllocateUISpace(X, Y, Width, Height);
 	Wnd = Window(WC_STATIC, "", SS_ETCHEDHORZ, 0, dialog);
+}
+
+void UIHorizontalLine::UpdateLayout(UILayoutHelper* layout)
+{
+	layout->AddControl(this);
 }
 
 
@@ -394,8 +365,8 @@ void UIHorizontalLine::Create(UIBaseDialog* dialog)
 
 UIVerticalLine::UIVerticalLine()
 {
-	Width = 2;
-	Height = -1;
+	Layout.Width = 2;
+	Layout.Height = -1;
 	//!! would be nice to get "Height = -1" working; probably would require 2-pass processing of UIGroup
 	//!! layout: 1st pass would set Height, for example, to 1, plus remember control which requires height
 	//!! change; 2nd pass will resize all remembered controls with the height of group
@@ -403,10 +374,13 @@ UIVerticalLine::UIVerticalLine()
 
 void UIVerticalLine::Create(UIBaseDialog* dialog)
 {
-	Parent->AllocateUISpace(X, Y, Width, Height);
 	Wnd = Window(WC_STATIC, "", SS_ETCHEDVERT, 0, dialog);
 }
 
+void UIVerticalLine::UpdateLayout(UILayoutHelper* layout)
+{
+	layout->AddControl(this);
+}
 
 /*-----------------------------------------------------------------------------
 	UIBitmap
@@ -417,7 +391,7 @@ void UIVerticalLine::Create(UIBaseDialog* dialog)
 UIBitmap::UIBitmap()
 :	hImage(0)
 {
-	Width = Height = 0;		// use dimensions from resource
+	Layout.Width = Layout.Height = 0;		// use dimensions from resource
 }
 
 void UIBitmap::LoadResourceImage(int id, UINT type, UINT fuLoad)
@@ -447,7 +421,7 @@ void UIBitmap::LoadResourceImage(int id, UINT type, UINT fuLoad)
 	{
 		rid = MAKEINTRESOURCE(id);
 	}
-	hImage = LoadImage(inst, rid, type, Width, Height, fuLoad);
+	hImage = LoadImage(inst, rid, type, Layout.Width, Layout.Height, fuLoad);
 }
 
 UIBitmap& UIBitmap::SetResourceIcon(int resId)
@@ -459,10 +433,10 @@ UIBitmap& UIBitmap::SetResourceIcon(int resId)
 		appPrintf("UIBitmap::SetResourceIcon: %d\n", GetLastError());
 #endif
 	// Note: can't get icon dimensione using GetObject() - this function would fail.
-	if ((!Width || !Height) && hImage)
+	if ((!Layout.Width || !Layout.Height) && hImage)
 	{
-		Width = GetSystemMetrics(SM_CXICON);
-		Height = GetSystemMetrics(SM_CYICON);
+		Layout.Width = GetSystemMetrics(SM_CXICON);
+		Layout.Height = GetSystemMetrics(SM_CYICON);
 	}
 	return *this;
 }
@@ -477,22 +451,26 @@ UIBitmap& UIBitmap::SetResourceBitmap(int resId)
 	if (!hImage)
 		appPrintf("UIBitmap::SetResourceBitmap: %d\n", GetLastError());
 #endif
-	if ((!Width || !Height) && hImage)
+	if ((!Layout.Width || !Layout.Height) && hImage)
 	{
 		BITMAP bm;
 		memset(&bm, 0, sizeof(bm));
 		GetObject(hImage, sizeof(bm), &bm);
-		Width = bm.bmWidth;
-		Height = bm.bmHeight;
+		Layout.Width = bm.bmWidth;
+		Layout.Height = bm.bmHeight;
 	}
 	return *this;
 }
 
 void UIBitmap::Create(UIBaseDialog* dialog)
 {
-	Parent->AllocateUISpace(X, Y, Width, Height);
 	Wnd = Window(WC_STATIC, "", IsIcon ? SS_ICON : SS_BITMAP, 0, dialog);
 	if (Wnd && hImage) SendMessage(Wnd, STM_SETIMAGE, IsIcon ? IMAGE_ICON : IMAGE_BITMAP, (LPARAM)hImage);
+}
+
+void UIBitmap::UpdateLayout(UILayoutHelper* layout)
+{
+	layout->AddControl(this);
 }
 
 
@@ -505,7 +483,9 @@ UILabel::UILabel(const char* text, ETextAlign align)
 ,	Align(align)
 ,	AutoSize(false)
 {
-	Height = DEFAULT_LABEL_HEIGHT;
+	Layout.Height = DEFAULT_LABEL_HEIGHT;
+	MinWidth = MIN_CONTROL_WIDTH;
+	MinHeight = DEFAULT_LABEL_HEIGHT;
 }
 
 void UILabel::SetText(const char* text)
@@ -521,11 +501,16 @@ void UILabel::SetText(const char* text)
 
 void UILabel::UpdateSize(UIBaseDialog* dialog)
 {
+	int labelWidth;
+	MeasureTextSize(*Label, &labelWidth, NULL, dialog->GetWnd());
+
 	if (AutoSize)
 	{
-		int labelWidth;
-		MeasureTextSize(*Label, &labelWidth, NULL, dialog->GetWnd());
-		Width = labelWidth;
+		Layout.Width = labelWidth;
+	}
+	else if (MinWidth == 0)
+	{
+		MinWidth = labelWidth;
 	}
 }
 
@@ -541,17 +526,22 @@ static int ConvertTextAlign(ETextAlign align)
 
 void UILabel::Create(UIBaseDialog* dialog)
 {
-	if (Height == -1)
-	{
-		// Auto-size: compute label's height
-		int labelWidth, labelHeight;
-		labelWidth = Width;
-		MeasureTextVSize(*Label, &labelWidth, &labelHeight, dialog->GetWnd());
-		Height = labelHeight;
-	}
-	Parent->AllocateUISpace(X, Y, Width, Height);
 	Wnd = Window(WC_STATIC, *Label, ConvertTextAlign(Align), 0, dialog);
 	UpdateEnabled();
+}
+
+void UILabel::UpdateLayout(UILayoutHelper* layout)
+{
+	if (Layout.Height == -1)
+	{
+		// Auto-size: compute label's height
+		//?? todo: separate AutoVSize option, try to move code to UpdateSize()
+		int labelWidth, labelHeight;
+		labelWidth = Layout.Width;
+		MeasureTextVSize(*Label, &labelWidth, &labelHeight, GetDialog()->GetWnd());
+		Layout.Height = labelHeight;
+	}
+	layout->AddControl(this);
 }
 
 
@@ -564,9 +554,18 @@ UIHyperLink::UIHyperLink(const char* text, const char* link /*, ETextAlign align
 ,	Link(link)
 {}
 
+void UIHyperLink::UpdateSize(UIBaseDialog* dialog)
+{
+	if (MinWidth == 0)
+	{
+		int labelWidth;
+		MeasureTextSize(*Label, &labelWidth, NULL, dialog->GetWnd());
+		MinWidth = labelWidth;
+	}
+}
+
 void UIHyperLink::Create(UIBaseDialog* dialog)
 {
-	Parent->AllocateUISpace(X, Y, Width, Height);
 	Id = dialog->GenerateDialogId();
 
 #if 0
@@ -599,6 +598,11 @@ void UIHyperLink::Create(UIBaseDialog* dialog)
 	UpdateEnabled();
 }
 
+void UIHyperLink::UpdateLayout(UILayoutHelper* layout)
+{
+	layout->AddControl(this);
+}
+
 bool UIHyperLink::HandleCommand(int id, int cmd, LPARAM lParam)
 {
 	if (cmd == NM_CLICK || cmd == NM_RETURN || cmd == STN_CLICKED) // STN_CLICKED for WC_STATIC fallback
@@ -616,7 +620,10 @@ bool UIHyperLink::HandleCommand(int id, int cmd, LPARAM lParam)
 UIProgressBar::UIProgressBar()
 :	Value(0)
 {
-	Height = DEFAULT_PROGRESS_BAR_HEIGHT;
+	Layout.Height = DEFAULT_PROGRESS_BAR_HEIGHT;
+	MinWidth = MIN_CONTROL_WIDTH;
+	MinHeight = DEFAULT_PROGRESS_BAR_HEIGHT;
+	TopMargin = VERTICAL_SPACING;
 }
 
 void UIProgressBar::SetValue(float value)
@@ -628,11 +635,15 @@ void UIProgressBar::SetValue(float value)
 
 void UIProgressBar::Create(UIBaseDialog* dialog)
 {
-	Parent->AddVerticalSpace();
-	Parent->AllocateUISpace(X, Y, Width, Height);
 	Wnd = Window(PROGRESS_CLASS, "", 0, 0, dialog);
 	SendMessage(Wnd, PBM_SETRANGE, 0, MAKELPARAM(0, 16384));
 	if (Wnd) SendMessage(Wnd, PBM_SETPOS, (int)(Value * 16384), 0);
+}
+
+void UIProgressBar::UpdateLayout(UILayoutHelper* layout)
+{
+	layout->AddVertSpace();
+	layout->AddControl(this);
 }
 
 
@@ -643,7 +654,9 @@ void UIProgressBar::Create(UIBaseDialog* dialog)
 UIButton::UIButton(const char* text)
 :	Label(text)
 {
-	Height = DEFAULT_BUTTON_HEIGHT;
+	Layout.Height = DEFAULT_BUTTON_HEIGHT;
+	TopMargin = VERTICAL_SPACING;
+	BottomMargin = VERTICAL_SPACING;
 }
 
 UIButton& UIButton::SetOK()
@@ -658,17 +671,36 @@ UIButton& UIButton::SetCancel()
 	return *this;
 }
 
+void UIButton::UpdateSize(UIBaseDialog* dialog)
+{
+	if (MinWidth == 0)
+	{
+		int labelWidth;
+		MeasureTextSize(*Label, &labelWidth, NULL, dialog->GetWnd());
+		MinWidth = labelWidth + DEFAULT_BUTTON_HEIGHT - DEFAULT_LABEL_HEIGHT;
+	}
+
+	if (MinHeight == 0)
+	{
+		MinHeight = DEFAULT_BUTTON_HEIGHT;
+	}
+}
+
 void UIButton::Create(UIBaseDialog* dialog)
 {
-	Parent->AddVerticalSpace();
-	Parent->AllocateUISpace(X, Y, Width, Height);
-	Parent->AddVerticalSpace();
 	if (Id == 0 || Id >= FIRST_DIALOG_ID)
 		Id = dialog->GenerateDialogId();		// do not override Id which was set outside of Create()
 
 	//!! BS_DEFPUSHBUTTON - for default key
 	Wnd = Window(WC_BUTTON, *Label, WS_TABSTOP, 0, dialog);
 	UpdateEnabled();
+}
+
+void UIButton::UpdateLayout(UILayoutHelper* layout)
+{
+	layout->AddVertSpace();
+	layout->AddControl(this);
+	layout->AddVertSpace();
 }
 
 bool UIButton::HandleCommand(int id, int cmd, LPARAM lParam)
@@ -708,26 +740,28 @@ static int GetComctl32Version()
 UIMenuButton::UIMenuButton(const char* text)
 :	Label(text)
 {
-	Height = DEFAULT_BUTTON_HEIGHT;
+	Layout.Height = DEFAULT_BUTTON_HEIGHT;
+	TopMargin = VERTICAL_SPACING;
+	BottomMargin = VERTICAL_SPACING;
 }
 
-/*UIMenuButton& UIMenuButton::SetOK()
+void UIMenuButton::UpdateSize(UIBaseDialog* dialog)
 {
-	Id = IDOK;
-	return *this;
-}
+	if (MinWidth == 0)
+	{
+		int labelWidth;
+		MeasureTextSize(*Label, &labelWidth, NULL, dialog->GetWnd());
+		MinWidth = labelWidth + DEFAULT_BUTTON_HEIGHT - DEFAULT_LABEL_HEIGHT + DEFAULT_CHECKBOX_HEIGHT;
+	}
 
-UIMenuButton& UIMenuButton::SetCancel()
-{
-	Id = IDCANCEL;
-	return *this;
-}*/
+	if (MinHeight == 0)
+	{
+		MinHeight = DEFAULT_BUTTON_HEIGHT;
+	}
+}
 
 void UIMenuButton::Create(UIBaseDialog* dialog)
 {
-	Parent->AddVerticalSpace();
-	Parent->AllocateUISpace(X, Y, Width, Height);
-	Parent->AddVerticalSpace();
 	if (Id == 0 || Id >= FIRST_DIALOG_ID)
 		Id = dialog->GenerateDialogId();		// do not override Id which was set outside of Create()
 
@@ -737,6 +771,13 @@ void UIMenuButton::Create(UIBaseDialog* dialog)
 	if (GetComctl32Version() >= 0x600) flags |= BS_SPLITBUTTON; // not supported in comctl32.dll prior version 6.00
 	Wnd = Window(WC_BUTTON, *Label, flags, 0, dialog);
 	UpdateEnabled();
+}
+
+void UIMenuButton::UpdateLayout(UILayoutHelper* layout)
+{
+	layout->AddVertSpace();
+	layout->AddControl(this);
+	layout->AddVertSpace();
 }
 
 bool UIMenuButton::HandleCommand(int id, int cmd, LPARAM lParam)
@@ -773,7 +814,7 @@ UICheckbox::UICheckbox(const char* text, bool value, bool autoSize)
 ,	pValue(&bValue)		// points to local variable
 ,	AutoSize(autoSize)
 {
-	Height = DEFAULT_CHECKBOX_HEIGHT;
+	Layout.Height = DEFAULT_CHECKBOX_HEIGHT;
 }
 
 UICheckbox::UICheckbox(const char* text, bool* value, bool autoSize)
@@ -782,22 +823,32 @@ UICheckbox::UICheckbox(const char* text, bool* value, bool autoSize)
 ,	pValue(value)
 ,	AutoSize(autoSize)
 {
-	Height = DEFAULT_CHECKBOX_HEIGHT;
+	Layout.Height = DEFAULT_CHECKBOX_HEIGHT;
 }
 
 void UICheckbox::UpdateSize(UIBaseDialog* dialog)
 {
+	int checkboxWidth;
+	MeasureTextSize(*Label, &checkboxWidth, NULL, dialog->GetWnd());
+	checkboxWidth += DEFAULT_CHECKBOX_HEIGHT;
+
 	if (AutoSize)
 	{
-		int checkboxWidth;
-		MeasureTextSize(*Label, &checkboxWidth, NULL, dialog->GetWnd());
-		Width = checkboxWidth + DEFAULT_CHECKBOX_HEIGHT;
+		Layout.Width = checkboxWidth;
+	}
+	else if (MinWidth == 0)
+	{
+		MinWidth = checkboxWidth;
+	}
+
+	if (MinHeight == 0)
+	{
+		MinHeight = DEFAULT_CHECKBOX_HEIGHT;
 	}
 }
 
 void UICheckbox::Create(UIBaseDialog* dialog)
 {
-	Parent->AllocateUISpace(X, Y, Width, Height);
 	Id = dialog->GenerateDialogId();
 
 	DlgWnd = dialog->GetWnd();
@@ -808,10 +859,15 @@ void UICheckbox::Create(UIBaseDialog* dialog)
 
 	// add DEFAULT_CHECKBOX_HEIGHT to 'Width' to include checkbox rect
 	Wnd = Window(WC_BUTTON, *Label, WS_TABSTOP | BS_AUTOCHECKBOX, 0, dialog,
-		Id, X, Y, min(checkboxWidth + DEFAULT_CHECKBOX_HEIGHT, Width));
+		Id, Rect.X, Rect.Y, min(checkboxWidth + DEFAULT_CHECKBOX_HEIGHT, Rect.Width));
 
 	CheckDlgButton(DlgWnd, Id, *pValue ? BST_CHECKED : BST_UNCHECKED);
 	UpdateEnabled();
+}
+
+void UICheckbox::UpdateLayout(UILayoutHelper* layout)
+{
+	layout->AddControl(this);
 }
 
 bool UICheckbox::HandleCommand(int id, int cmd, LPARAM lParam)
@@ -839,7 +895,7 @@ UIRadioButton::UIRadioButton(const char* text, bool autoSize)
 ,	AutoSize(autoSize)
 {
 	IsRadioButton = true;
-	Height = DEFAULT_CHECKBOX_HEIGHT;
+	Layout.Height = DEFAULT_CHECKBOX_HEIGHT;
 }
 
 UIRadioButton::UIRadioButton(const char* text, int value, bool autoSize)
@@ -849,22 +905,32 @@ UIRadioButton::UIRadioButton(const char* text, int value, bool autoSize)
 ,	AutoSize(autoSize)
 {
 	IsRadioButton = true;
-	Height = DEFAULT_CHECKBOX_HEIGHT;
+	Layout.Height = DEFAULT_CHECKBOX_HEIGHT;
 }
 
 void UIRadioButton::UpdateSize(UIBaseDialog* dialog)
 {
+	int radioWidth;
+	MeasureTextSize(*Label, &radioWidth, NULL, dialog->GetWnd());
+	radioWidth += DEFAULT_CHECKBOX_HEIGHT;
+
 	if (AutoSize)
 	{
-		int radioWidth;
-		MeasureTextSize(*Label, &radioWidth, NULL, dialog->GetWnd());
-		Width = radioWidth + DEFAULT_CHECKBOX_HEIGHT;
+		Layout.Width = radioWidth;
+	}
+	else if (MinWidth == 0)
+	{
+		MinWidth = radioWidth;
+	}
+
+	if (MinHeight == 0)
+	{
+		MinHeight = DEFAULT_CHECKBOX_HEIGHT;
 	}
 }
 
 void UIRadioButton::Create(UIBaseDialog* dialog)
 {
-	Parent->AllocateUISpace(X, Y, Width, Height);
 	Id = dialog->GenerateDialogId();
 
 	HWND DlgWnd = dialog->GetWnd();
@@ -875,10 +941,15 @@ void UIRadioButton::Create(UIBaseDialog* dialog)
 
 	// add DEFAULT_CHECKBOX_HEIGHT to 'Width' to include checkbox rect
 	Wnd = Window(WC_BUTTON, *Label, WS_TABSTOP | BS_AUTORADIOBUTTON, 0, dialog,
-		Id, X, Y, min(radioWidth + DEFAULT_CHECKBOX_HEIGHT, Width));
+		Id, Rect.X, Rect.Y, min(radioWidth + DEFAULT_CHECKBOX_HEIGHT, Rect.Width));
 
 //	CheckDlgButton(DlgWnd, Id, *pValue ? BST_CHECKED : BST_UNCHECKED);
 	UpdateEnabled();
+}
+
+void UIRadioButton::UpdateLayout(UILayoutHelper* layout)
+{
+	layout->AddControl(this);
 }
 
 void UIRadioButton::ButtonSelected(bool value)
@@ -917,7 +988,9 @@ UITextEdit::UITextEdit(const char* value)
 ,	IsWantFocus(true)
 ,	TextDirty(false)
 {
-	Height = DEFAULT_EDIT_HEIGHT;
+	Layout.Height = DEFAULT_EDIT_HEIGHT;
+	MinWidth = MIN_CONTROL_WIDTH;
+	MinHeight = DEFAULT_EDIT_HEIGHT;
 }
 
 UITextEdit::UITextEdit(FString* value)
@@ -927,7 +1000,9 @@ UITextEdit::UITextEdit(FString* value)
 ,	IsReadOnly(false)
 ,	IsWantFocus(true)
 {
-	Height = DEFAULT_EDIT_HEIGHT;
+	Layout.Height = DEFAULT_EDIT_HEIGHT;
+	MinWidth = MIN_CONTROL_WIDTH;
+	MinHeight = DEFAULT_EDIT_HEIGHT;
 }
 
 void UITextEdit::SetText(const char* text)
@@ -946,7 +1021,6 @@ const char* UITextEdit::GetText()
 
 void UITextEdit::Create(UIBaseDialog* dialog)
 {
-	Parent->AllocateUISpace(X, Y, Width, Height);
 	Id = dialog->GenerateDialogId();
 
 	int style = (IsWantFocus) ? WS_TABSTOP : 0;
@@ -966,6 +1040,11 @@ void UITextEdit::Create(UIBaseDialog* dialog)
 
 	// Remove limit of 30k characters
 	SendMessage(Wnd, EM_SETLIMITTEXT, 0x100000, 0);
+}
+
+void UITextEdit::UpdateLayout(UILayoutHelper* layout)
+{
+	layout->AddControl(this);
 }
 
 bool UITextEdit::HandleCommand(int id, int cmd, LPARAM lParam)
@@ -1019,7 +1098,11 @@ void UITextEdit::AppendText(const char* text)
 UICombobox::UICombobox()
 :	Value(-1)
 {
-	Height = DEFAULT_COMBOBOX_HEIGHT;
+	Layout.Height = DEFAULT_COMBOBOX_HEIGHT;
+	MinWidth = MIN_CONTROL_WIDTH;
+	MinHeight = DEFAULT_COMBOBOX_HEIGHT;
+	TopMargin = VERTICAL_SPACING;
+	BottomMargin = VERTICAL_SPACING;
 }
 
 UICombobox& UICombobox::AddItem(const char* item)
@@ -1067,9 +1150,6 @@ UICombobox& UICombobox::SelectItem(const char* item)
 
 void UICombobox::Create(UIBaseDialog* dialog)
 {
-	Parent->AddVerticalSpace();
-	Parent->AllocateUISpace(X, Y, Width, Height);
-	Parent->AddVerticalSpace();
 	Id = dialog->GenerateDialogId();
 
 	// Note: we're sending DEFAULT_COMBOBOX_LIST_HEIGHT instead of control's Height here, otherwise
@@ -1085,6 +1165,13 @@ void UICombobox::Create(UIBaseDialog* dialog)
 	// set selection
 	SendMessage(Wnd, CB_SETCURSEL, Value, 0);
 	UpdateEnabled();
+}
+
+void UICombobox::UpdateLayout(UILayoutHelper* layout)
+{
+	layout->AddVertSpace();
+	layout->AddControl(this);
+	layout->AddVertSpace();
 }
 
 bool UICombobox::HandleCommand(int id, int cmd, LPARAM lParam)
@@ -1111,7 +1198,11 @@ bool UICombobox::HandleCommand(int id, int cmd, LPARAM lParam)
 UIListbox::UIListbox()
 :	Value(-1)
 {
-	Height = DEFAULT_LISTBOX_HEIGHT;
+	Layout.Height = DEFAULT_LISTBOX_HEIGHT;
+	MinWidth = MIN_CONTROL_WIDTH;
+	MinHeight = DEFAULT_LISTBOX_HEIGHT;
+	TopMargin = VERTICAL_SPACING;
+	BottomMargin = VERTICAL_SPACING;
 }
 
 UIListbox& UIListbox::ReserveItems(int count)
@@ -1165,9 +1256,6 @@ UIListbox& UIListbox::SelectItem(const char* item)
 
 void UIListbox::Create(UIBaseDialog* dialog)
 {
-	Parent->AddVerticalSpace();
-	Parent->AllocateUISpace(X, Y, Width, Height);
-	Parent->AddVerticalSpace();
 	Id = dialog->GenerateDialogId();
 
 	Wnd = Window(WC_LISTBOX, "",
@@ -1179,6 +1267,13 @@ void UIListbox::Create(UIBaseDialog* dialog)
 	// set selection
 	SendMessage(Wnd, LB_SETCURSEL, Value, 0);
 	UpdateEnabled();
+}
+
+void UIListbox::UpdateLayout(UILayoutHelper* layout)
+{
+	layout->AddVertSpace();
+	layout->AddControl(this);
+	layout->AddVertSpace();
 }
 
 bool UIListbox::HandleCommand(int id, int cmd, LPARAM lParam)
@@ -1236,7 +1331,12 @@ UIMulticolumnListbox::UIMulticolumnListbox(int numColumns)
 ,	SortColumn(-1)
 ,	SortMode(false)
 {
-	Height = DEFAULT_LISTBOX_HEIGHT;
+	Layout.Height = DEFAULT_LISTBOX_HEIGHT;
+	MinWidth = MIN_CONTROL_WIDTH;
+	MinHeight = DEFAULT_LISTBOX_HEIGHT * 2;
+	TopMargin = VERTICAL_SPACING;
+	BottomMargin = VERTICAL_SPACING;
+
 	assert(NumColumns > 0 && NumColumns <= MAX_COLUMNS);
 	Items.AddZeroed(numColumns);	// reserve place for header
 }
@@ -1556,9 +1656,6 @@ void UIMulticolumnListbox::Create(UIBaseDialog* dialog)
 {
 	int i;
 
-	Parent->AddVerticalSpace();
-	Parent->AllocateUISpace(X, Y, Width, Height);
-	Parent->AddVerticalSpace();
 	Id = dialog->GenerateDialogId();
 
 	DWORD style = Multiselect ? 0 : LVS_SINGLESEL;
@@ -1574,7 +1671,7 @@ void UIMulticolumnListbox::Create(UIBaseDialog* dialog)
 #endif
 
 	// compute automatic column width
-	int clientWidth = Width - GetSystemMetrics(SM_CXVSCROLL) - 6; // exclude scrollbar and border areas
+	int clientWidth = Rect.Width - GetSystemMetrics(SM_CXVSCROLL) - 6; // exclude scrollbar and border areas
 	int totalWidth = 0;
 	int numAutoWidthColumns = 0;
 	int autoColumnWidth = 0;
@@ -1587,7 +1684,7 @@ void UIMulticolumnListbox::Create(UIBaseDialog* dialog)
 			w = int(DecodeWidth(w) * clientWidth);
 		totalWidth += w;
 	}
-	assert(totalWidth <= Width);
+	assert(totalWidth <= Rect.Width);
 	if (numAutoWidthColumns)
 		autoColumnWidth = (clientWidth - totalWidth) / numAutoWidthColumns;
 
@@ -1642,6 +1739,13 @@ void UIMulticolumnListbox::Create(UIBaseDialog* dialog)
 		SetItemSelection(SelectedItems[i], true);
 
 	UpdateEnabled();
+}
+
+void UIMulticolumnListbox::UpdateLayout(UILayoutHelper* layout)
+{
+	layout->AddVertSpace();
+	layout->AddControl(this);
+	layout->AddVertSpace();
 }
 
 bool UIMulticolumnListbox::HandleCommand(int id, int cmd, LPARAM lParam)
@@ -1824,7 +1928,12 @@ UITreeView::UITreeView()
 ,	bUseCheckboxes(false)
 ,	ItemHeight(DEFAULT_TREE_ITEM_HEIGHT)
 {
-	Height = DEFAULT_TREEVIEW_HEIGHT;
+	Layout.Height = DEFAULT_TREEVIEW_HEIGHT;
+	MinWidth = MIN_CONTROL_WIDTH;
+	MinHeight = DEFAULT_TREEVIEW_HEIGHT;
+	TopMargin = VERTICAL_SPACING;
+	BottomMargin = VERTICAL_SPACING;
+
 	HashTable = new TreeViewItem*[TREE_HASH_SIZE]; // will be initialized in RemoveAllItems()
 	// create a root item
 	RemoveAllItems();
@@ -1988,9 +2097,6 @@ static void LoadFolderIcons()
 
 void UITreeView::Create(UIBaseDialog* dialog)
 {
-	Parent->AddVerticalSpace();
-	Parent->AllocateUISpace(X, Y, Width, Height);
-	Parent->AddVerticalSpace();
 	Id = dialog->GenerateDialogId();
 
 	Wnd = Window(WC_TREEVIEW, "",
@@ -2025,6 +2131,13 @@ void UITreeView::Create(UIBaseDialog* dialog)
 	TreeView_SelectItem(Wnd, SelectedItem->hItem);
 
 	UpdateEnabled();
+}
+
+void UITreeView::UpdateLayout(UILayoutHelper* layout)
+{
+	layout->AddVertSpace();
+	layout->AddControl(this);
+	layout->AddVertSpace();
 }
 
 bool UITreeView::HandleCommand(int id, int cmd, LPARAM lParam)
@@ -2169,586 +2282,6 @@ void UITreeView::DialogClosed(bool cancel)
 
 
 /*-----------------------------------------------------------------------------
-	UIMenuItem
------------------------------------------------------------------------------*/
-
-// Hyperlink
-UIMenuItem::UIMenuItem(const char* text, const char* link)
-{
-	Init(MI_HyperLink, text);
-	Link = link;
-}
-
-// Checkbox
-UIMenuItem::UIMenuItem(const char* text, bool checked)
-:	bValue(checked)
-,	pValue(&bValue)
-,	iValue(0) // indicates that pValue is bool and not a mask
-{
-	Init(MI_Checkbox, text);
-}
-
-// Checkbox
-UIMenuItem::UIMenuItem(const char* text, bool* checked)
-:	pValue(checked)
-//,	bValue(value) - uninitialized
-,	iValue(0) // indicates that pValue is bool and not a mask
-{
-	Init(MI_Checkbox, text);
-}
-
-// Checkbox
-UIMenuItem::UIMenuItem(const char* text, int* value, int mask)
-:	pValue(value)
-,	iValue(mask) // indicates that pValue is a bitfield with iValue mask
-//,	bValue(value) - uninitialized
-{
-	assert((mask & (mask-1)) == 0 && mask != 0); // should be non-zero value with a single bit set
-	Init(MI_Checkbox, text);
-}
-
-// RadioGroup
-UIMenuItem::UIMenuItem(int value)
-:	iValue(value)
-,	pValue(&iValue)
-{
-	Init(MI_RadioGroup, NULL);
-}
-
-// RadioGroup
-UIMenuItem::UIMenuItem(int* value)
-:	pValue(value)
-//,	iValue(value) - uninitialized
-{
-	Init(MI_RadioGroup, NULL);
-}
-
-// RadioButton
-UIMenuItem::UIMenuItem(const char* text, int value)
-:	iValue(value)
-{
-	Init(MI_RadioButton, text);
-}
-
-// Common part of constructors
-void UIMenuItem::Init(EType type, const char* label)
-{
-	Type = type;
-	Label = label ? label : "";
-	Link = NULL;
-	Id = 0;
-	hMenu = NULL;
-	Parent = NextChild = FirstChild = NULL;
-	Enabled = true;
-}
-
-// Destructor: release all child items
-UIMenuItem::~UIMenuItem()
-{
-	DestroyChildren();
-}
-
-void UIMenuItem::DestroyChildren()
-{
-	UIMenuItem* next;
-	for (UIMenuItem* curr = FirstChild; curr; curr = next)
-	{
-		next = curr->NextChild;
-		delete curr;		// may be recurse here
-	}
-	FirstChild = NULL;
-}
-
-// Append a new menu item to chain. This code is very similar to
-// UIElement::operator+().
-UIMenuItem& operator+(UIMenuItem& item, UIMenuItem& next)
-{
-	guard(operator+(UIMenuItem));
-
-	UIMenuItem* e = &item;
-	while (true)
-	{
-		UIMenuItem* n = e->NextChild;
-		if (!n)
-		{
-			e->NextChild = &next;
-			break;
-		}
-		e = n;
-	}
-	return item;
-
-	unguard;
-}
-
-UIMenuItem& UIMenuItem::Enable(bool enable)
-{
-	Enabled = enable;
-	if (Parent && Parent->hMenu)
-	{
-		EnableMenuItem(Parent->hMenu, GetItemIndex(), MF_BYPOSITION | (enable ? MF_ENABLED : MF_DISABLED));
-		UIMenu* Menu = GetOwner();
-		if (Parent == Menu)
-		{
-			Menu->Redraw();
-		}
-	}
-	return *this;
-}
-
-UIMenuItem& UIMenuItem::SetName(const char* newName)
-{
-	if (Label != newName)
-	{
-		Label = newName;
-		if (Parent && Parent->hMenu)
-		{
-			MENUITEMINFO mii;
-			memset(&mii, 0, sizeof(mii));
-			mii.cbSize = sizeof(mii);
-			mii.fMask = MIIM_STRING;
-			mii.dwTypeData = (LPSTR)*Label;
-			SetMenuItemInfo(Parent->hMenu, GetItemIndex(), TRUE, &mii);
-			// If Parent is UIMenu, we're working with top-level menu item, so we should refresh menu line
-			UIMenu* Menu = GetOwner();
-			if (Parent == Menu)
-			{
-				Menu->Redraw();
-			}
-		}
-	}
-	return *this;
-}
-
-// Add new submenu. This code is very similar to UIGroup::Add().
-void UIMenuItem::Add(UIMenuItem* item)
-{
-	guard(UIMenuItem::Add);
-
-	assert(Type == MI_Submenu || Type == MI_RadioGroup);
-
-	if (!FirstChild)
-	{
-		FirstChild = item;
-	}
-	else
-	{
-		// find last child
-		UIMenuItem* prev = NULL;
-		for (UIMenuItem* curr = FirstChild; curr; prev = curr, curr = curr->NextChild)
-		{ /* empty */ }
-		// add item(s)
-		prev->NextChild = item;
-	}
-
-	// set parent for all items in chain
-	for ( /* empty */; item; item = item->NextChild)
-	{
-		assert(item->Parent == NULL);
-		item->Parent = this;
-	}
-
-	unguard;
-}
-
-// Get index of 'this' menu item in parent's children list
-int UIMenuItem::GetItemIndex() const
-{
-	if (!Parent) return -1;
-	int index = 0;
-	for (UIMenuItem* item = Parent->FirstChild; item; item = item->NextChild)
-	{
-		if (item == this) return index;
-		// todo: can skip invisible items, if we'll support those
-		index++;
-	}
-	return -1;
-}
-
-// Recursive function for menu creation
-void UIMenuItem::FillMenuItems(HMENU parentMenu, int& nextId, int& position)
-{
-	guard(UIMenuItem::FillMenuItems);
-
-	assert(Type == MI_Submenu || Type == MI_RadioGroup);
-
-	for (UIMenuItem* item = FirstChild; item; item = item->NextChild, position++)
-	{
-		switch (item->Type)
-		{
-		case MI_Text:
-		case MI_HyperLink:
-		case MI_Checkbox:
-		case MI_RadioButton:
-			{
-				assert(item->Id == 0);
-				item->Id = nextId++;
-
-				MENUITEMINFO mii;
-				memset(&mii, 0, sizeof(mii));
-
-				UINT fType = MFT_STRING;
-				UINT fState = 0;
-				if (!item->Enabled) fState |= MFS_DISABLED;
-				if (item->Type == MI_Checkbox && item->GetCheckboxValue())
-				{
-					// checked checkbox
-					fState |= MFS_CHECKED;
-				}
-				else if (Type == MI_RadioGroup && item->Type == MI_RadioButton)
-				{
-					// radio button will work as needed only
-					fType |= MFT_RADIOCHECK;
-					if (*(int*)pValue == item->iValue)
-						fState |= MFS_CHECKED;
-				}
-
-				mii.cbSize     = sizeof(mii);
-				mii.fMask      = MIIM_FTYPE | MIIM_STATE | MIIM_ID | MIIM_STRING;
-				mii.fType      = fType;
-				mii.fState     = fState;
-				mii.wID        = item->Id;
-				mii.dwTypeData = const_cast<char*>(*item->Label);
-				mii.cch        = (UINT)strlen(mii.dwTypeData);
-
-				InsertMenuItem(parentMenu, position, TRUE, &mii);
-			}
-			break;
-
-		case MI_Separator:
-			AppendMenu(parentMenu, MF_SEPARATOR, 0, NULL);
-			break;
-
-		case MI_Submenu:
-			{
-				assert(!item->hMenu);
-				item->hMenu = CreatePopupMenu();
-				AppendMenu(parentMenu, MF_POPUP, (UINT_PTR)item->hMenu, *item->Label);
-				int submenuPosition = 0;
-				item->FillMenuItems(item->hMenu, nextId, submenuPosition);
-			}
-			break;
-
-		case MI_RadioGroup:
-			// just add all children to current menu
-			item->FillMenuItems(parentMenu, nextId, position);
-			break;
-
-		default:
-			appError("Unkwnown item type: %d (label=%s)", item->Type, *item->Label);
-		}
-	}
-
-	unguard;
-}
-
-bool UIMenuItem::HandleCommand(int id)
-{
-	guard(UIMenuItem::HandleCommand);
-
-	HMENU hMenu = GetMenuHandle();
-	if (!hMenu) return false; // should not happen - HandleCommand executed when menu is active, so it exists
-
-	for (UIMenuItem* item = FirstChild; item; item = item->NextChild)
-	{
-		if (item->Id == id)
-		{
-			// this item was clicked
-			switch (item->Type)
-			{
-			case MI_Text:
-				if (item->Callback)
-					item->Callback(item);
-				break;
-
-			case MI_HyperLink:
-				ShellExecute(NULL, "open", item->Link, NULL, NULL, SW_SHOW);
-				break;
-
-			case MI_Checkbox:
-				{
-					// change value
-					bool value = !item->GetCheckboxValue();
-					item->SetCheckboxValue(value);
-					// update menu
-					CheckMenuItem(hMenu, item->Id, MF_BYCOMMAND | (value ? MF_CHECKED : 0));
-					// callbacks
-					if (item->Callback)
-						item->Callback(item);
-					if (item->CheckboxCallback)
-						item->CheckboxCallback(item, value);
-				}
-				break;
-
-			default:
-				appError("Unkwnown item type: %d (label=%s)", item->Type, *item->Label);
-			}
-			return true;
-		}
-		// id is different, verify container items
-		switch (item->Type)
-		{
-		case MI_Submenu:
-			// recurse to children
-			if (item->HandleCommand(id))
-				return true;
-			break;
-
-		case MI_RadioGroup:
-			{
-				// check whether this id belongs to radio group
-				// 'item' is group here
-				UIMenuItem* clickedButton = NULL;
-				int newValue = 0;
-				for (UIMenuItem* button = item->FirstChild; button; button = button->NextChild)
-					if (button->Id == id)
-					{
-						clickedButton = button;
-						newValue = button->iValue;
-						break;
-					}
-				if (!clickedButton) continue;	// not in this group
-				// it's ours, process the button
-				int oldValue = *(int*)item->pValue;
-				for (UIMenuItem* button = item->FirstChild; button; button = button->NextChild)
-				{
-					assert(button->Type == MI_RadioButton);
-					bool checked = (button == clickedButton);
-					if (button->iValue == oldValue || checked)
-						CheckMenuItem(hMenu, button->Id, MF_BYCOMMAND | (checked ? MF_CHECKED : 0));
-				}
-				// update value
-				*(int*)item->pValue = newValue;
-				// callbacks
-				if (clickedButton->Callback)
-					clickedButton->Callback(item);
-				if (item->RadioCallback)
-					item->RadioCallback(item, newValue);
-			}
-			break;
-		}
-	}
-
-	// the command was not processed
-	return false;
-
-	unguard;
-}
-
-UIMenu* UIMenuItem::GetOwner()
-{
-	UIMenuItem* item = this;
-	while (item->Parent)
-		item = item->Parent;
-	return static_cast<UIMenu*>(item);
-}
-
-HMENU UIMenuItem::GetMenuHandle()
-{
-	return GetOwner()->GetHandle(false);
-}
-
-int UIMenuItem::GetMaxItemIdRecursive()
-{
-	int maxId = Id;
-	for (UIMenuItem* item = FirstChild; item; item = item->NextChild)
-	{
-		int maxChildId = item->GetMaxItemIdRecursive();
-		if (maxChildId > maxId)
-			maxId = maxChildId;
-	}
-	return maxId;
-}
-
-void UIMenuItem::Update()
-{
-	guard(UIMenuItem::Update);
-
-	HMENU hMenu = GetMenuHandle();
-	if (!hMenu) return;
-
-	switch (Type)
-	{
-	case MI_Checkbox:
-		{
-			bool value = GetCheckboxValue();
-			CheckMenuItem(hMenu, Id, MF_BYCOMMAND | (value ? MF_CHECKED : 0));
-		}
-		break;
-	case MI_RadioGroup:
-		for (UIMenuItem* button = FirstChild; button; button = button->NextChild)
-		{
-			bool checked = (button->iValue == *(int*)pValue);
-			CheckMenuItem(hMenu, button->Id, MF_BYCOMMAND | (checked ? MF_CHECKED : 0));
-		}
-		break;
-	case MI_Submenu:
-		for (UIMenuItem* item = FirstChild; item; item = item->NextChild)
-			item->Update();
-		break;
-	}
-
-	unguard;
-}
-
-void UIMenuItem::ReplaceWith(UIMenuItem* other)
-{
-	guard(UIMenuItem::ReplaceWith);
-
-	// Both should be submenus
-	assert(Type == MI_Submenu && other->Type == MI_Submenu);
-	// This should be created, other - not
-	assert(hMenu != NULL && Parent != NULL);
-	assert(other->hMenu == NULL && other->Parent == NULL);
-
-	// Destroy C++ objects
-	DestroyChildren();
-
-	// Destroy all menu items
-	for (int i = GetMenuItemCount(hMenu) - 1; i >= 0; i--)
-	{
-		DeleteMenu(hMenu, i, MF_BYPOSITION);
-	}
-
-	// Now, move other's content into this menu
-	FirstChild = other->FirstChild;
-	other->FirstChild = NULL;
-	for (UIMenuItem* item = FirstChild; item; item = item->NextChild)
-	{
-		item->Parent = this;
-	}
-
-	int nextId = GetOwner()->GetNextItemId();
-	int submenuPosition = 0;
-	FillMenuItems(hMenu, nextId, submenuPosition);
-
-	if (!other->Label.IsEmpty())
-	{
-		SetName(*other->Label);
-	}
-
-	// Cleanup
-	delete other;
-
-	unguard;
-}
-
-bool UIMenuItem::GetCheckboxValue() const
-{
-	assert(Type == MI_Checkbox);
-	if (iValue)
-	{
-		// bitfield
-		return ( *(int*)pValue & iValue ) != 0;
-	}
-	else
-	{
-		// simple bool
-		return *(bool*)pValue;
-	}
-}
-
-void UIMenuItem::SetCheckboxValue(bool newValue)
-{
-	assert(Type == MI_Checkbox);
-	if (iValue)
-	{
-		// bitfield
-		int fullValue = *(int*)pValue;
-		fullValue = fullValue & ~iValue | (newValue ? iValue : 0);
-		*(int*)pValue = fullValue;
-	}
-	else
-	{
-		// simple bool
-		*(bool*)pValue = newValue;
-	}
-}
-
-
-/*-----------------------------------------------------------------------------
-	UIMenu
------------------------------------------------------------------------------*/
-
-UIMenu::UIMenu()
-:	UIMenuItem(MI_Submenu)
-,	ReferenceCount(0)
-,	MenuOwner(NULL)
-,	MenuObject(NULL)
-{}
-
-UIMenu::~UIMenu()
-{
-	if (MenuObject) DestroyMenu(MenuObject);
-}
-
-void UIMenu::AttachTo(HWND Wnd, bool updateRefCount)
-{
-	assert(MenuOwner == NULL);
-	MenuOwner = Wnd;
-	if (updateRefCount)
-	{
-		ReferenceCount++;
-	}
-	SetMenu(MenuOwner, GetHandle(false, true));
-	Redraw();
-}
-
-void UIMenu::Detach()
-{
-	if (MenuOwner)
-	{
-		SetMenu(MenuOwner, NULL);
-		Redraw();
-		MenuOwner = NULL;
-	}
-	if (--ReferenceCount == 0) delete this;
-}
-
-void UIMenu::Redraw()
-{
-	if (MenuOwner) DrawMenuBar(MenuOwner);
-}
-
-HMENU UIMenu::GetHandle(bool popup, bool forceCreate)
-{
-	if (!hMenu && forceCreate) Create(popup);
-	return hMenu;
-}
-
-void UIMenu::Create(bool popup)
-{
-	guard(UIMenu::Create);
-
-	assert(!hMenu);
-	int nextId = FIRST_MENU_ID, position = 0;
-
-	if (popup)
-	{
-		// TrackPopupMenu can't work with main menu, it requires a submenu handle.
-		// Create dummy submenu to host all menu items. MenuObject will be a menu
-		// owner here, and hMenu will be a menu itself.
-		MenuObject = CreateMenu();
-		hMenu = CreatePopupMenu();
-		AppendMenu(MenuObject, MF_POPUP, (UINT_PTR)hMenu, "");
-	}
-	else
-	{
-		hMenu = MenuObject = CreateMenu();
-	}
-
-	FillMenuItems(hMenu, nextId, position);
-
-	unguard;
-}
-
-int UIMenu::GetNextItemId()
-{
-	return max(GetMaxItemIdRecursive() + 1, FIRST_MENU_ID);
-}
-
-
-/*-----------------------------------------------------------------------------
 	UIGroup
 -----------------------------------------------------------------------------*/
 
@@ -2759,6 +2292,8 @@ UIGroup::UIGroup(const char* label, unsigned flags)
 ,	RadioValue(0)
 ,	pRadioValue(&RadioValue)
 {
+	TopMargin = VERTICAL_SPACING;
+	BottomMargin = VERTICAL_SPACING;
 	IsGroup = true;
 }
 
@@ -2768,6 +2303,8 @@ UIGroup::UIGroup(unsigned flags)
 ,	RadioValue(0)
 ,	pRadioValue(&RadioValue)
 {
+	TopMargin = VERTICAL_SPACING;
+	BottomMargin = VERTICAL_SPACING;
 	IsGroup = true;
 }
 
@@ -2856,95 +2393,6 @@ void UIGroup::Remove(UIElement* item)
 	unguard;
 }
 
-#if DEBUG_LAYOUT
-
-static int DebugLayoutDepth = 0;
-
-const char* GetDebugLayoutIndent()
-{
-#define MAX_INDENT 32
-	static char indent[MAX_INDENT*2+1];
-	if (!indent[0]) memset(indent, ' ', sizeof(indent)-1);
-	return &indent[MAX_INDENT*2 - DebugLayoutDepth*2];
-}
-
-#endif // DEBUG_LAYOUT
-
-void UIGroup::AllocateUISpace(int& x, int& y, int& w, int& h)
-{
-	guard(UIGroup::AllocateUISpace);
-
-	int baseX = X + CursorX;
-	int parentWidth = Width;
-	int rightMargin = X + Width;
-
-	if (!(Flags & GROUP_NO_BORDER))
-	{
-		parentWidth -= GROUP_INDENT * 2;
-		rightMargin -= GROUP_INDENT;
-	}
-
-	DBG_LAYOUT("%s... AllocSpace (%d %d %d %d) IN: Curs: %d,%d W: %d -- ", GetDebugLayoutIndent(), x, y, w, h, CursorX, CursorY, parentWidth);
-
-	if (w < 0)
-	{
-		if (w == -1 && (Flags & GROUP_HORIZONTAL_LAYOUT))
-			w = AutoWidth;
-		else
-			w = int(DecodeWidth(w) * parentWidth);
-	}
-
-	if (h < 0 && Height > 0)
-	{
-		h = int(DecodeWidth(h) * Height);
-	}
-	assert(h >= 0);
-
-	if (x == -1)
-	{
-		x = baseX;
-		if ((Flags & (GROUP_NO_AUTO_LAYOUT|GROUP_HORIZONTAL_LAYOUT)) == GROUP_HORIZONTAL_LAYOUT)
-			CursorX += w;
-	}
-	else if (x < 0)
-		x = baseX + int(DecodeWidth(x) * parentWidth);	// left border of parent control, 'x' is relative value
-	else
-		x = baseX + x;									// treat 'x' as relative value
-
-	if (x + w > rightMargin)
-		w = rightMargin - x;
-
-	if (y < 0)
-	{
-		y = Y + CursorY;								// next 'y' value
-		if ((Flags & (GROUP_NO_AUTO_LAYOUT|GROUP_HORIZONTAL_LAYOUT)) == 0)
-			CursorY += h;
-	}
-	else
-	{
-		y = Y + CursorY + y;							// treat 'y' as relative value
-		// don't change 'Height'
-	}
-
-//	h = unchanged;
-
-	DBG_LAYOUT("OUT: (%d %d %d %d) Curs: %d,%d\n", x, y, w, h, CursorX, CursorY);
-
-	unguard;
-}
-
-void UIGroup::AddVerticalSpace(int size)
-{
-	if ((Flags & (GROUP_NO_AUTO_LAYOUT|GROUP_HORIZONTAL_LAYOUT)) == 0)
-		CursorY += (size >= 0 ? size : VERTICAL_SPACING);
-}
-
-void UIGroup::AddHorizontalSpace(int size)
-{
-	if ((Flags & (GROUP_NO_AUTO_LAYOUT|GROUP_HORIZONTAL_LAYOUT)) == GROUP_HORIZONTAL_LAYOUT)
-		CursorX += (size >= 0 ? size : HORIZONTAL_SPACING);
-}
-
 bool UIGroup::HandleCommand(int id, int cmd, LPARAM lParam)
 {
 	for (UIElement* ctl = FirstChild; ctl; ctl = ctl->NextChild)
@@ -2989,6 +2437,32 @@ void UIGroup::Create(UIBaseDialog* dialog)
 	}
 }
 
+void UIGroup::CreateGroupControls(UIBaseDialog* dialog)
+{
+	guard(UIGroup::CreateGroupControls);
+
+	// call 'Create' for all children
+	bool isRadioGroup = false;
+	int controlIndex = 0;
+	for (UIElement* control = FirstChild; control; control = control->NextChild, controlIndex++)
+	{
+		guard(ControlCreate);
+		control->Create(dialog);
+		unguardf("index=%d,class=%s", controlIndex, control->ClassName());
+
+		if (control->IsRadioButton) isRadioGroup = true;
+	}
+	if (isRadioGroup) InitializeRadioGroup();
+
+	if (!(Flags & GROUP_NO_BORDER))
+	{
+		// create a group window (border)
+		Wnd = Window(WC_BUTTON, *Label, BS_GROUPBOX | WS_GROUP, 0, dialog);
+	}
+
+	unguardf("%s", *Label);
+}
+
 void UIGroup::UpdateEnabled()
 {
 	Super::UpdateEnabled();
@@ -3001,146 +2475,16 @@ void UIGroup::UpdateVisible()
 	ShowAllControls(Visible);
 }
 
-void UIGroup::CreateGroupControls(UIBaseDialog* dialog)
+//?? todo: rename function because it does more than UpdateSize() call
+void UIGroup::UpdateSize(UIBaseDialog* dialog)
 {
-	guard(UIGroup::CreateGroupControls);
-
-	// save original positions for second AllocateUISpace call
-	int origX = X, origY = Y, origW = Width, origH = Height;
-
-	if (!(Flags & GROUP_NO_BORDER))
-	{
-		CursorX = GROUP_INDENT;
-		CursorY = GROUP_MARGIN_TOP;
-	}
-	else
-	{
-		CursorX = CursorY = 0;
-	}
-	if (Parent)
-	{
-//		if (!(Flags & GROUP_NO_BORDER)) -- makes control layout looking awful
-		Parent->AddVerticalSpace();
-		// request x, y and width; height is not available yet
-		int h = 0;
-		Parent->AllocateUISpace(X, Y, Width, h);
-	}
-	else
-	{
-		// this is a dialog, add some space on top for better layout
-		CursorY += VERTICAL_SPACING;
-	}
-#if DEBUG_LAYOUT
-	DBG_LAYOUT("%sgroup \"%s\" cursor: %d %d\n", GetDebugLayoutIndent(), *Label, CursorX, CursorY);
-	DebugLayoutDepth++;
-#endif
-
 	// allow UIGroup-based classes to add own controls
 	AddCustomControls();
 
-	// some controls could compite size depending on text
 	for (UIElement* control = FirstChild; control; control = control->NextChild)
+	{
 		control->UpdateSize(dialog);
-
-	// determine default width of control in horizontal layout; this value will be used for
-	// all controls which width was not specified (for Width==-1)
-	AutoWidth = 0;
-	int horizontalSpacing = 0;
-	if (Flags & GROUP_HORIZONTAL_LAYOUT)
-	{
-		int totalWidth = 0;					// total width of controls with specified width
-		int numAutoWidthControls = 0;		// number of controls with width set to -1
-		int numControls = 0;
-		int parentWidth = Width;			// width of space for children controls
-		if (!(Flags & GROUP_NO_BORDER))
-			parentWidth -= GROUP_INDENT * 2;
-
-		for (UIElement* control = FirstChild; control; control = control->NextChild)
-		{
-			numControls++;
-			// get width of control
-			int w = control->Width;
-			if (w == -1)
-			{
-				numAutoWidthControls++;
-			}
-			else if (w < 0)
-			{
-				w = int(DecodeWidth(w) * parentWidth);
-				totalWidth += w;
-			}
-			else
-			{
-				totalWidth += w;
-			}
-		}
-		if (totalWidth > parentWidth)
-			appNotify("Group(%s) is not wide enough to store children controls: %d < %d", *Label, parentWidth, totalWidth);
-		if (numAutoWidthControls)
-			AutoWidth = (parentWidth - totalWidth) / numAutoWidthControls;
-		if (Flags & GROUP_HORIZONTAL_SPACING)
-		{
-			if (numAutoWidthControls)
-			{
-				appNotify("Group(%s) has GROUP_HORIZONTAL_SPACING and auto-width controls", *Label);
-			}
-			else
-			{
-				if (numControls > 1)
-					horizontalSpacing = (parentWidth - totalWidth) / (numControls - 1);
-			}
-		}
 	}
-
-	// call 'Create' for all children
-	int maxControlY = Y + Height;
-	bool isRadioGroup = false;
-	int controlIndex = 0;
-	for (UIElement* control = FirstChild; control; control = control->NextChild, controlIndex++)
-	{
-		// evenly space controls for horizontal layout, when requested
-		if (horizontalSpacing > 0 && control != FirstChild)
-			AddHorizontalSpace(horizontalSpacing);
-		DBG_LAYOUT("%screate %s: x=%d y=%d w=%d h=%d\n", GetDebugLayoutIndent(),
-			control->ClassName(), control->X, control->Y, control->Width, control->Height);
-
-		guard(ControlCreate);
-		control->Create(dialog);
-		unguardf("index=%d,class=%s", controlIndex, control->ClassName());
-
-		int bottom = control->Y + control->Height;
-		if (bottom > maxControlY)
-			maxControlY = bottom;
-		if (control->IsRadioButton) isRadioGroup = true;
-	}
-	if (isRadioGroup) InitializeRadioGroup();
-
-	Height = max(Height, maxControlY - Y);
-
-	if (!(Flags & GROUP_NO_BORDER))
-		Height += GROUP_MARGIN_BOTTOM;
-
-	if (Parent && !(Parent->Flags & GROUP_HORIZONTAL_LAYOUT))
-	{
-		// for vertical layout we should call AllocateUISpace again to adjust parent's CursorY
-		// (because height wasn't known when we called AllocateUISpace first time)
-		origH = Height;
-		Parent->AllocateUISpace(origX, origY, origW, origH);
-	}
-#if DEBUG_LAYOUT
-	DebugLayoutDepth--;
-#endif
-
-	if (!(Flags & GROUP_NO_BORDER))
-	{
-		// create a group window (border)
-		Wnd = Window(WC_BUTTON, *Label, BS_GROUPBOX | WS_GROUP, 0, dialog);
-	}
-
-	if (Parent)
-		Parent->AddVerticalSpace();
-
-	unguardf("%s", *Label);
 }
 
 void UIGroup::InitializeRadioGroup()
@@ -3193,16 +2537,14 @@ void UIGroup::RadioButtonClicked(UIRadioButton* sender)
 -----------------------------------------------------------------------------*/
 
 UICheckboxGroup::UICheckboxGroup(const char* label, bool value, unsigned flags)
-:	UIGroup(flags)
-,	Label(label)
+:	UIGroup(label, flags)
 ,	bValue(value)
 ,	pValue(&bValue)		// points to local variable
 ,	CheckboxWnd(0)
 {}
 
 UICheckboxGroup::UICheckboxGroup(const char* label, bool* value, unsigned flags)
-:	UIGroup(flags)
-,	Label(label)
+:	UIGroup(label, flags)
 //,	bValue(value) - uninitialized, unused
 ,	pValue(value)
 ,	CheckboxWnd(0)
@@ -3210,7 +2552,11 @@ UICheckboxGroup::UICheckboxGroup(const char* label, bool* value, unsigned flags)
 
 void UICheckboxGroup::Create(UIBaseDialog* dialog)
 {
+	// Call UIGroup::Create with hiding Label from this function. We'll make
+	// own label using checkbox control
+	FString tmpLabel(Detail::MoveTemp(Label));
 	UIGroup::Create(dialog);
+	Label = Detail::MoveTemp(tmpLabel);
 
 	Id = dialog->GenerateDialogId();
 	DlgWnd = dialog->GetWnd();
@@ -3221,7 +2567,7 @@ void UICheckboxGroup::Create(UIBaseDialog* dialog)
 	int checkboxOffset = (Flags & GROUP_NO_BORDER) ? 0 : GROUP_INDENT;
 
 	CheckboxWnd = Window(WC_BUTTON, *Label, WS_TABSTOP | BS_AUTOCHECKBOX, 0, dialog,
-		Id, X + checkboxOffset, Y, min(checkboxWidth + DEFAULT_CHECKBOX_HEIGHT, Width - checkboxOffset), DEFAULT_CHECKBOX_HEIGHT);
+		Id, Rect.X + checkboxOffset, Rect.Y, min(checkboxWidth + DEFAULT_CHECKBOX_HEIGHT, Rect.Width - checkboxOffset), DEFAULT_CHECKBOX_HEIGHT);
 
 	CheckDlgButton(DlgWnd, Id, *pValue ? BST_CHECKED : BST_UNCHECKED);
 	EnableAllControls(*pValue);
@@ -3285,12 +2631,9 @@ void UIPageControl::Create(UIBaseDialog* dialog)
 {
 	guard(UIPageControl::Create);
 
-	Parent->AllocateUISpace(X, Y, Width, Height);
-
 	int pageIndex = 0;
 	for (UIElement* page = FirstChild; page; page = page->NextChild, pageIndex++)
 	{
-		CursorX = CursorY = 0;
 		page->Show(pageIndex == ActivePage);
 
 		guard(PageCreate);
@@ -3299,6 +2642,19 @@ void UIPageControl::Create(UIBaseDialog* dialog)
 	}
 
 	unguard;
+}
+
+void UIPageControl::UpdateLayout(UILayoutHelper* inLayout)
+{
+	inLayout->AddControl(this);
+
+	UILayoutHelper layout(this, Flags);
+
+	for (UIElement* page = FirstChild; page; page = page->NextChild)
+	{
+		layout.CursorX = layout.CursorY = 0; //?? not sure if this is needed
+		page->UpdateLayout(&layout);
+	}
 }
 
 
@@ -3409,6 +2765,9 @@ bool UIBaseDialog::ShowDialog(bool modal, const char* title, int width, int heig
 		NextDialogId = FIRST_DIALOG_ID;
 
 	ClosingDialog = false;
+
+	Layout.Width = width;
+	Layout.Height = height;
 
 	// convert title to unicode
 	wchar_t wTitle[MAX_TITLE_LEN];
@@ -3710,12 +3069,21 @@ INT_PTR UIBaseDialog::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		RECT r;
 		GetClientRect(Wnd, &r);
 		int clientWidth = r.right - r.left;
+		int clientHeight = r.bottom - r.top;
 
-		// prepare layout variabled
-		X = DEFAULT_HORZ_BORDER;
-		Y = 0;
-		Width = clientWidth - DEFAULT_HORZ_BORDER * 2;
-		Height = 0;
+		// prepare layout variables
+#if !NEW_LAYOUT_CODE
+		Layout.X = DEFAULT_HORZ_BORDER;
+		Layout.Y = 0;
+		Layout.Width = clientWidth - DEFAULT_HORZ_BORDER * 2;
+		Layout.Height = 0;
+#else
+		Layout.X = DEFAULT_HORZ_BORDER;
+		Layout.Y = VERTICAL_SPACING;
+		Layout.Width = clientWidth;
+		Layout.Height = clientHeight;
+#endif
+		Rect = Layout;
 
 		// release old controls, if dialog is opened 2nd time
 		ReleaseControls();
@@ -3723,6 +3091,18 @@ INT_PTR UIBaseDialog::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		IsDialogConstructed = false;
 		InitUI();
 		IsDialogConstructed = true;
+
+		UpdateSize(this);
+#if !NEW_LAYOUT_CODE
+		UpdateLayout(NULL); //?? review
+#else
+		if (Layout.Width <= 0 || Layout.Height <= 0)
+		{
+			ComputeLayout();
+		}
+		ComputeLayout();
+#endif
+
 		CreateGroupControls(this);
 
 		if (Menu)
@@ -3734,8 +3114,12 @@ INT_PTR UIBaseDialog::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		// adjust window size taking into account desired client size and center window on screen
 		r.left   = 0;
 		r.top    = 0;
+#if !NEW_LAYOUT_CODE
 		r.right  = clientWidth;
-		r.bottom = Height + VERTICAL_SPACING;
+#else
+		r.right  = Rect.Width + DEFAULT_HORZ_BORDER * 2;
+#endif
+		r.bottom = Rect.Y + Rect.Height;
 
 		int newX = (GetSystemMetrics(SM_CXSCREEN) - (r.right - r.left)) / 2;
 		int newY = (GetSystemMetrics(SM_CYSCREEN) - (r.bottom - r.top)) / 2;

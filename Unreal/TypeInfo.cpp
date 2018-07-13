@@ -227,8 +227,8 @@ const CPropInfo *CTypeInfo::FindProperty(const char *Name) const
 
 struct CPropDump
 {
-	FStaticString<32>	Name;
-	FStaticString<32>	Value;
+	FString				Name;
+	FString				Value;
 	TArray<CPropDump>	Nested;				// Value should be "" when Nested[] is not empty
 	bool				IsArrayItem;
 
@@ -262,7 +262,7 @@ private:
 };
 
 
-static void CollectProps(const CTypeInfo *Type, void *Data, CPropDump &Dump)
+static void CollectProps(const CTypeInfo *Type, const void *Data, CPropDump &Dump)
 {
 	for (/* empty */; Type; Type = Type->Parent)
 	{
@@ -470,7 +470,7 @@ static void PrintProps(const CPropDump &Dump, FArchive& Ar, int Indent, bool Top
 }
 
 
-void CTypeInfo::DumpProps(void *Data) const
+void CTypeInfo::DumpProps(const void *Data) const
 {
 	guard(CTypeInfo::DumpProps);
 	CPropDump Dump;
@@ -484,7 +484,7 @@ void CTypeInfo::DumpProps(void *Data) const
 	unguard;
 }
 
-void CTypeInfo::SaveProps(void *Data, FArchive& Ar) const
+void CTypeInfo::SaveProps(const void *Data, FArchive& Ar) const
 {
 	guard(CTypeInfo::SaveProps);
 	CPropDump Dump;
