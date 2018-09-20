@@ -8,7 +8,7 @@ class UIUE4AesKeyDialog : public UIBaseDialog
 public:
 	FString Show()
 	{
-		if (!ShowModal("Please enter AES encryption key", 250, 200))
+		if (!ShowModal("Please enter AES encryption key", -1, -1))
 			return "";
 
 		// Save typed encryption key
@@ -20,6 +20,7 @@ public:
 		(*this)
 		[
 			NewControl(UIGroup, GROUP_NO_BORDER|GROUP_HORIZONTAL_LAYOUT)
+			.SetWidth(EncodeWidth(1.0f))
 			[
 				NewControl(UIBitmap)
 				.SetWidth(48)
@@ -27,10 +28,11 @@ public:
 				.SetResourceIcon(UIBitmap::BI_Warning)
 				+ NewControl(UISpacer, 8)
 				+NewControl(UIGroup, GROUP_NO_BORDER)
+				.SetWidth(EncodeWidth(1.0f))
 				[
-					NewControl(UILabel, "UModel has found an encrypted UE4 pak file. In order to")
-					+NewControl(UILabel, "work correctly please specify an AES encryption key which")
-					+NewControl(UILabel, "is used for this game.")
+					NewControl(UILabel, "UModel has found an encrypted UE4 pak file. In order to").SetAutoSize()
+					+NewControl(UILabel, "work correctly please specify an AES encryption key which").SetAutoSize()
+					+NewControl(UILabel, "is used for this game.").SetAutoSize()
 					+NewControl(UISpacer)
 					+NewControl(UITextEdit, &Value)
 					+NewControl(UISpacer)
@@ -42,7 +44,6 @@ public:
 						.SetOK()
 //						.Enable(false)
 //						.Expose(OkButton)
-						+NewControl(UISpacer)
 						+NewControl(UIButton, "Cancel")
 						.SetWidth(80)
 						.SetCancel()

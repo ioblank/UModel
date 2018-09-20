@@ -37,7 +37,12 @@ void FTexture2DMipMap::Serialize4(FArchive &Ar, FTexture2DMipMap& Mip)
 	//?? Seek() and decompression calls. You'll see that loading of big bulk data chinks is interleaved
 	//?? with reading 4-byte ints at different locations.
 	Mip.Data.Serialize(Ar);
-	Ar << Mip.SizeX << Mip.SizeY << Mip.SizeZ;
+	Ar << Mip.SizeX << Mip.SizeY;
+	if (Ar.Game >= GAME_UE4(20))
+	{
+		int32 SizeZ;
+		Ar << SizeZ;
+	}
 	if (Ar.ArVer >= VER_UE4_TEXTURE_DERIVED_DATA2 && !cooked)
 	{
 		FString DerivedDataKey;
@@ -142,8 +147,15 @@ void UTexture2D::Serialize4(FArchive& Ar)
 		Ar << PixelFormatEnum;
 		while (stricmp(PixelFormatEnum, "None") != 0)
 		{
-			int64 SkipOffset;
+			int32 SkipOffset;
 			Ar << SkipOffset;
+			if (Ar.Game >= GAME_UE4(20))
+			{
+				int32 SkipOffsetH;
+				Ar << SkipOffsetH;
+				assert(SkipOffsetH == 0);
+			}
+
 			EPixelFormat PixelFormat = (EPixelFormat)NameToEnum("EPixelFormat", PixelFormatEnum);
 
 			if (Format == PF_Unknown)
@@ -194,6 +206,8 @@ void UTexture2D::Serialize4(FArchive& Ar)
 		SizeX = Source.SizeX;
 		SizeY = Source.SizeY;
 
+		appPrintf("... Loading SourceArt: %s, NumMips=%d, Slices=%d, PNGCompressed=%d\n", FormatName, Source.NumMips, Source.NumSlices, Source.bPNGCompressed);
+
 		if (Source.NumSlices == 1 && Source.bPNGCompressed == false && BytesPerPixel > 0)
 		{
 			// Cubemaps and PNG images are not supported
@@ -222,7 +236,6 @@ void UTexture2D::Serialize4(FArchive& Ar)
 				memcpy(Mip.Data.BulkData, SourceArt.BulkData + MipOffset, MipDataSize);
 				MipOffset += MipDataSize;
 			}
-			appPrintf("  Loading SourceArt: %s, NumMips=%d, Slices=%d, PNGCompressed=%d\n", FormatName, Source.NumMips, Source.NumSlices, Source.bPNGCompressed);
 		}
 		// compresses source art will be loaded in UTexture2D::GetTextureData()
 

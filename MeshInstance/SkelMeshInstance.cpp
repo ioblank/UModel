@@ -29,7 +29,7 @@ struct CMeshBoneData
 {
 	// static data (computed after mesh loading)
 	int			BoneMap;			// index of bone in animation tracks
-	CCoords		RefCoords;			// coordinates of bone in reference pose (unused!!)
+	CCoords		RefCoords;			// coordinates of bone in reference pose (used only when computing RefCoordsInv)
 	CCoords		RefCoordsInv;		// inverse of RefCoords
 	int			SubtreeSize;		// count of all children bones (0 for leaf bone)
 	// dynamic data
@@ -280,9 +280,13 @@ if (i == 32 || i == 34)
 
 void CSkelMeshInstance::SetAnim(const CAnimSet *Anim)
 {
+	guard(CSkelMeshInstance::SetAnim);
+
 	if (!pMesh) return;		// mesh is not set yet
 
 	Animation = Anim;
+
+	if (!Anim) return;
 
 	int i;
 	CMeshBoneData *data;
@@ -305,6 +309,8 @@ void CSkelMeshInstance::SetAnim(const CAnimSet *Anim)
 
 	ClearSkelAnims();
 	PlayAnim(NULL);
+
+	unguard;
 }
 
 
@@ -1292,7 +1298,7 @@ void CSkelMeshInstance::DrawMesh(unsigned flags)
 			glVertex3fv(tmp.v);
 		}
 #if SHOW_TANGENTS
-		glColor3f(0, 0.5f, 1);
+		glColor3f(1, 0, 0.5f);
 		for (i = 0; i < NumVerts; i++)
 		{
 			const CSkinVert& vert = Skinned[i];
@@ -1301,7 +1307,7 @@ void CSkelMeshInstance::DrawMesh(unsigned flags)
 			VectorMA(vert.Position, VisualLength, vert.Tangent, tmp);
 			glVertex3fv(tmp.v);
 		}
-		glColor3f(1, 0, 0.5f);
+		glColor3f(0, 0.5f, 1);
 		for (i = 0; i < NumVerts; i++)
 		{
 			const CSkinVert& vert = Skinned[i];

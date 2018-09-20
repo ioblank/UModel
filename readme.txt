@@ -199,6 +199,28 @@ detex
 
 Changes
 ~~~~~~~
+22.08.2018
+- implemented glTF skeletal animation export; note that the animation should be opened in mesh viewer for that
+
+16.08.2018
+- an attempt to not crash when UE4 pak files has encrypted index, and AES key doesn't match
+
+01.08.2018
+- addeed skeletal mesh export in glTF format
+
+27.07.2018
+- added option for exporting static meshes to glTF 2.0 format; activated in options window or with "-gltf"
+  command line option
+
+20.07.2018
+- final UE4.20 support
+
+19.07.2018
+- some fixes for UE4 PNG texture loading
+
+15.07.2018
+- package selection and package version report windows are now resizable
+
 11.07.2018
 - exporting a .props.txt file next to .mat, it contains all material's properties
 

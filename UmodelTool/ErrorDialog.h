@@ -6,11 +6,12 @@ class UIErrorDialog : public UIBaseDialog
 public:
 	void Show()
 	{
-		ShowModal("Fatal Error", 350, 250);
+		ShowModal("Fatal Error", 475, -1);
 	}
 
 	void InitUI()
 	{
+#if DO_GUARD
 		char message[256];
 		char* s = strchr(GErrorHistory, '\n');
 		const char* log;
@@ -28,6 +29,7 @@ public:
 		(*this)
 		[
 			NewControl(UIGroup, GROUP_NO_BORDER|GROUP_HORIZONTAL_LAYOUT)
+			.SetWidth(EncodeWidth(1.0f))
 			[
 				NewControl(UIBitmap)
 				.SetWidth(48)
@@ -35,6 +37,7 @@ public:
 				.SetResourceIcon(UIBitmap::BI_Error)
 				+ NewControl(UISpacer)
 				+ NewControl(UIGroup, GROUP_NO_BORDER)
+				.SetWidth(EncodeWidth(1.0f))
 				[
 					NewControl(UILabel, message)
 					.SetHeight(-1)		//!! auto-size label height; use AutoVSize API?
@@ -47,7 +50,6 @@ public:
 					.SetReadOnly()
 					.SetWantFocus(false)
 				]
-				+ NewControl(UISpacer)
 				+ NewControl(UIGroup, GROUP_NO_BORDER)
 				.SetWidth(80)
 				[
@@ -61,11 +63,14 @@ public:
 				]
 			]
 		];
+#endif // DO_GUARD
 	}
 
 	static void CopyToClipboard()
 	{
+#if DO_GUARD
 		appCopyTextToClipboard(GErrorHistory);
+#endif
 	}
 };
 

@@ -16,7 +16,6 @@
 
 #include "BaseDialog.h"
 
-//#define NEW_LAYOUT_CODE		1
 
 /* Useful links:
 
@@ -80,6 +79,8 @@ UIElement::UIElement()
 ,	MinHeight(0)
 ,	TopMargin(0)
 ,	BottomMargin(0)
+,	LeftMargin(0)
+,	RightMargin(0)
 ,	IsGroup(false)
 ,	IsRadioButton(false)
 ,	Enabled(true)
@@ -277,6 +278,14 @@ HWND UIElement::Window(const wchar_t* className, const wchar_t* text, DWORD styl
 	return wnd;
 }
 
+void UIElement::UpdateLayout()
+{
+	if (Wnd)
+	{
+		MoveWindow(Wnd, Rect.X, Rect.Y, Rect.Width, Rect.Height, FALSE);
+	}
+}
+
 void UIElement::Repaint()
 {
 	InvalidateRect(Wnd, NULL, TRUE);
@@ -318,25 +327,6 @@ UISpacer::UISpacer(int size)
 	Layout.Height = (size > 0) ? size : VERTICAL_SPACING;
 }
 
-void UISpacer::UpdateLayout(UILayoutHelper* layout)
-{
-	assert(layout->UseAutomaticLayout());
-	if (layout->UseVerticalLayout())
-	{
-		layout->AddVertSpace(Layout.Height);
-	}
-	else if (Layout.Width > 0)
-	{
-		// Simple case: Width is absolute value
-		layout->AddHorzSpace(Layout.Width);
-	}
-	else
-	{
-		// More complex, spacer with fractional width
-		layout->AddControl(this);
-	}
-}
-
 
 /*-----------------------------------------------------------------------------
 	UIHorizontalLine
@@ -351,11 +341,6 @@ UIHorizontalLine::UIHorizontalLine()
 void UIHorizontalLine::Create(UIBaseDialog* dialog)
 {
 	Wnd = Window(WC_STATIC, "", SS_ETCHEDHORZ, 0, dialog);
-}
-
-void UIHorizontalLine::UpdateLayout(UILayoutHelper* layout)
-{
-	layout->AddControl(this);
 }
 
 
@@ -377,10 +362,6 @@ void UIVerticalLine::Create(UIBaseDialog* dialog)
 	Wnd = Window(WC_STATIC, "", SS_ETCHEDVERT, 0, dialog);
 }
 
-void UIVerticalLine::UpdateLayout(UILayoutHelper* layout)
-{
-	layout->AddControl(this);
-}
 
 /*-----------------------------------------------------------------------------
 	UIBitmap
@@ -468,11 +449,6 @@ void UIBitmap::Create(UIBaseDialog* dialog)
 	if (Wnd && hImage) SendMessage(Wnd, STM_SETIMAGE, IsIcon ? IMAGE_ICON : IMAGE_BITMAP, (LPARAM)hImage);
 }
 
-void UIBitmap::UpdateLayout(UILayoutHelper* layout)
-{
-	layout->AddControl(this);
-}
-
 
 /*-----------------------------------------------------------------------------
 	UILabel
@@ -530,20 +506,6 @@ void UILabel::Create(UIBaseDialog* dialog)
 	UpdateEnabled();
 }
 
-void UILabel::UpdateLayout(UILayoutHelper* layout)
-{
-	if (Layout.Height == -1)
-	{
-		// Auto-size: compute label's height
-		//?? todo: separate AutoVSize option, try to move code to UpdateSize()
-		int labelWidth, labelHeight;
-		labelWidth = Layout.Width;
-		MeasureTextVSize(*Label, &labelWidth, &labelHeight, GetDialog()->GetWnd());
-		Layout.Height = labelHeight;
-	}
-	layout->AddControl(this);
-}
-
 
 /*-----------------------------------------------------------------------------
 	UIHyperLink
@@ -598,11 +560,6 @@ void UIHyperLink::Create(UIBaseDialog* dialog)
 	UpdateEnabled();
 }
 
-void UIHyperLink::UpdateLayout(UILayoutHelper* layout)
-{
-	layout->AddControl(this);
-}
-
 bool UIHyperLink::HandleCommand(int id, int cmd, LPARAM lParam)
 {
 	if (cmd == NM_CLICK || cmd == NM_RETURN || cmd == STN_CLICKED) // STN_CLICKED for WC_STATIC fallback
@@ -623,7 +580,7 @@ UIProgressBar::UIProgressBar()
 	Layout.Height = DEFAULT_PROGRESS_BAR_HEIGHT;
 	MinWidth = MIN_CONTROL_WIDTH;
 	MinHeight = DEFAULT_PROGRESS_BAR_HEIGHT;
-	TopMargin = VERTICAL_SPACING;
+	TopMargin = DEFAULT_MARGIN; //? review: may be remove
 }
 
 void UIProgressBar::SetValue(float value)
@@ -640,12 +597,6 @@ void UIProgressBar::Create(UIBaseDialog* dialog)
 	if (Wnd) SendMessage(Wnd, PBM_SETPOS, (int)(Value * 16384), 0);
 }
 
-void UIProgressBar::UpdateLayout(UILayoutHelper* layout)
-{
-	layout->AddVertSpace();
-	layout->AddControl(this);
-}
-
 
 /*-----------------------------------------------------------------------------
 	UIButton
@@ -655,8 +606,10 @@ UIButton::UIButton(const char* text)
 :	Label(text)
 {
 	Layout.Height = DEFAULT_BUTTON_HEIGHT;
-	TopMargin = VERTICAL_SPACING;
-	BottomMargin = VERTICAL_SPACING;
+	TopMargin = DEFAULT_MARGIN;
+	BottomMargin = DEFAULT_MARGIN;
+	LeftMargin = DEFAULT_MARGIN;
+	RightMargin = DEFAULT_MARGIN;
 }
 
 UIButton& UIButton::SetOK()
@@ -694,13 +647,6 @@ void UIButton::Create(UIBaseDialog* dialog)
 	//!! BS_DEFPUSHBUTTON - for default key
 	Wnd = Window(WC_BUTTON, *Label, WS_TABSTOP, 0, dialog);
 	UpdateEnabled();
-}
-
-void UIButton::UpdateLayout(UILayoutHelper* layout)
-{
-	layout->AddVertSpace();
-	layout->AddControl(this);
-	layout->AddVertSpace();
 }
 
 bool UIButton::HandleCommand(int id, int cmd, LPARAM lParam)
@@ -741,8 +687,10 @@ UIMenuButton::UIMenuButton(const char* text)
 :	Label(text)
 {
 	Layout.Height = DEFAULT_BUTTON_HEIGHT;
-	TopMargin = VERTICAL_SPACING;
-	BottomMargin = VERTICAL_SPACING;
+	TopMargin = DEFAULT_MARGIN;
+	BottomMargin = DEFAULT_MARGIN;
+	LeftMargin = DEFAULT_MARGIN;
+	RightMargin = DEFAULT_MARGIN;
 }
 
 void UIMenuButton::UpdateSize(UIBaseDialog* dialog)
@@ -771,13 +719,6 @@ void UIMenuButton::Create(UIBaseDialog* dialog)
 	if (GetComctl32Version() >= 0x600) flags |= BS_SPLITBUTTON; // not supported in comctl32.dll prior version 6.00
 	Wnd = Window(WC_BUTTON, *Label, flags, 0, dialog);
 	UpdateEnabled();
-}
-
-void UIMenuButton::UpdateLayout(UILayoutHelper* layout)
-{
-	layout->AddVertSpace();
-	layout->AddControl(this);
-	layout->AddVertSpace();
 }
 
 bool UIMenuButton::HandleCommand(int id, int cmd, LPARAM lParam)
@@ -815,6 +756,8 @@ UICheckbox::UICheckbox(const char* text, bool value, bool autoSize)
 ,	AutoSize(autoSize)
 {
 	Layout.Height = DEFAULT_CHECKBOX_HEIGHT;
+	LeftMargin = DEFAULT_MARGIN;
+	RightMargin = DEFAULT_MARGIN;
 }
 
 UICheckbox::UICheckbox(const char* text, bool* value, bool autoSize)
@@ -824,6 +767,8 @@ UICheckbox::UICheckbox(const char* text, bool* value, bool autoSize)
 ,	AutoSize(autoSize)
 {
 	Layout.Height = DEFAULT_CHECKBOX_HEIGHT;
+	LeftMargin = DEFAULT_MARGIN;
+	RightMargin = DEFAULT_MARGIN;
 }
 
 void UICheckbox::UpdateSize(UIBaseDialog* dialog)
@@ -865,11 +810,6 @@ void UICheckbox::Create(UIBaseDialog* dialog)
 	UpdateEnabled();
 }
 
-void UICheckbox::UpdateLayout(UILayoutHelper* layout)
-{
-	layout->AddControl(this);
-}
-
 bool UICheckbox::HandleCommand(int id, int cmd, LPARAM lParam)
 {
 	if (cmd != BN_CLICKED) return false;
@@ -896,6 +836,8 @@ UIRadioButton::UIRadioButton(const char* text, bool autoSize)
 {
 	IsRadioButton = true;
 	Layout.Height = DEFAULT_CHECKBOX_HEIGHT;
+	LeftMargin = DEFAULT_MARGIN;
+	RightMargin = DEFAULT_MARGIN;
 }
 
 UIRadioButton::UIRadioButton(const char* text, int value, bool autoSize)
@@ -906,6 +848,8 @@ UIRadioButton::UIRadioButton(const char* text, int value, bool autoSize)
 {
 	IsRadioButton = true;
 	Layout.Height = DEFAULT_CHECKBOX_HEIGHT;
+	LeftMargin = DEFAULT_MARGIN;
+	RightMargin = DEFAULT_MARGIN;
 }
 
 void UIRadioButton::UpdateSize(UIBaseDialog* dialog)
@@ -945,11 +889,6 @@ void UIRadioButton::Create(UIBaseDialog* dialog)
 
 //	CheckDlgButton(DlgWnd, Id, *pValue ? BST_CHECKED : BST_UNCHECKED);
 	UpdateEnabled();
-}
-
-void UIRadioButton::UpdateLayout(UILayoutHelper* layout)
-{
-	layout->AddControl(this);
 }
 
 void UIRadioButton::ButtonSelected(bool value)
@@ -1042,11 +981,6 @@ void UITextEdit::Create(UIBaseDialog* dialog)
 	SendMessage(Wnd, EM_SETLIMITTEXT, 0x100000, 0);
 }
 
-void UITextEdit::UpdateLayout(UILayoutHelper* layout)
-{
-	layout->AddControl(this);
-}
-
 bool UITextEdit::HandleCommand(int id, int cmd, LPARAM lParam)
 {
 	if (cmd == EN_CHANGE)
@@ -1097,17 +1031,21 @@ void UITextEdit::AppendText(const char* text)
 
 UICombobox::UICombobox()
 :	Value(-1)
+,	pValue(&Value)
+,	Selection(-1)
 {
 	Layout.Height = DEFAULT_COMBOBOX_HEIGHT;
 	MinWidth = MIN_CONTROL_WIDTH;
 	MinHeight = DEFAULT_COMBOBOX_HEIGHT;
-	TopMargin = VERTICAL_SPACING;
-	BottomMargin = VERTICAL_SPACING;
+	TopMargin = DEFAULT_MARGIN;
+	BottomMargin = DEFAULT_MARGIN;
+	LeftMargin = DEFAULT_MARGIN;
+	RightMargin = DEFAULT_MARGIN;
 }
 
-UICombobox& UICombobox::AddItem(const char* item)
+UICombobox& UICombobox::AddItem(const char* item, int value)
 {
-	new (Items) FString(item);
+	new (Items) ComboboxItem(item, value);
 	if (Wnd) SendMessage(Wnd, CB_ADDSTRING, 0, (LPARAM)item);
 	return *this;
 }
@@ -1127,9 +1065,9 @@ void UICombobox::RemoveAllItems()
 
 UICombobox& UICombobox::SelectItem(int index)
 {
-	if (Value == index) return *this;
-	Value = index;
-	if (Wnd) SendMessage(Wnd, CB_SETCURSEL, Value, 0);
+	if (Selection == index) return *this;
+	Selection = index;
+	if (Wnd) SendMessage(Wnd, CB_SETCURSEL, Selection, 0);
 	return *this;
 }
 
@@ -1138,7 +1076,7 @@ UICombobox& UICombobox::SelectItem(const char* item)
 	int index = -1;
 	for (int i = 0; i < Items.Num(); i++)
 	{
-		if (!stricmp(*Items[i], item))
+		if (!stricmp(*Items[i].Text, item))
 		{
 			index = i;
 			break;
@@ -1159,19 +1097,25 @@ void UICombobox::Create(UIBaseDialog* dialog)
 		CBS_DROPDOWNLIST | CBS_HASSTRINGS | WS_VSCROLL | WS_TABSTOP,
 		WS_EX_CLIENTEDGE, dialog,
 		Id, -1, -1, -1, DEFAULT_COMBOBOX_LIST_HEIGHT);
-	// add items
+	// add items and find selected item
+	int v = *pValue;
+	if (Selection < 0)
+	{
+		// if all items will have uninitialized value, then we'll assume values 0,1,2...
+		Selection = v;
+	}
 	for (int i = 0; i < Items.Num(); i++)
-		SendMessage(Wnd, CB_ADDSTRING, 0, (LPARAM)(*Items[i]));
+	{
+		const ComboboxItem& item = Items[i];
+		SendMessage(Wnd, CB_ADDSTRING, 0, (LPARAM)(*item.Text));
+		if (item.Value >= 0 && item.Value == v)
+		{
+			Selection = i;
+		}
+	}
 	// set selection
-	SendMessage(Wnd, CB_SETCURSEL, Value, 0);
+	SendMessage(Wnd, CB_SETCURSEL, Selection, 0);
 	UpdateEnabled();
-}
-
-void UICombobox::UpdateLayout(UILayoutHelper* layout)
-{
-	layout->AddVertSpace();
-	layout->AddControl(this);
-	layout->AddVertSpace();
 }
 
 bool UICombobox::HandleCommand(int id, int cmd, LPARAM lParam)
@@ -1179,11 +1123,13 @@ bool UICombobox::HandleCommand(int id, int cmd, LPARAM lParam)
 	if (cmd == CBN_SELCHANGE)
 	{
 		int v = (int)SendMessage(Wnd, CB_GETCURSEL, 0, 0);
-		if (v != Value)
+		if (v != Selection)
 		{
-			Value = v;
+			Selection = v;
+			int m = Items[v].Value;
+			*pValue = m;
 			if (Callback)
-				Callback(this, Value, GetSelectionText());
+				Callback(this, *pValue, GetSelectionText());
 		}
 		return true;
 	}
@@ -1201,8 +1147,10 @@ UIListbox::UIListbox()
 	Layout.Height = DEFAULT_LISTBOX_HEIGHT;
 	MinWidth = MIN_CONTROL_WIDTH;
 	MinHeight = DEFAULT_LISTBOX_HEIGHT;
-	TopMargin = VERTICAL_SPACING;
-	BottomMargin = VERTICAL_SPACING;
+	TopMargin = DEFAULT_MARGIN;
+	BottomMargin = DEFAULT_MARGIN;
+	LeftMargin = DEFAULT_MARGIN;
+	RightMargin = DEFAULT_MARGIN;
 }
 
 UIListbox& UIListbox::ReserveItems(int count)
@@ -1269,13 +1217,6 @@ void UIListbox::Create(UIBaseDialog* dialog)
 	UpdateEnabled();
 }
 
-void UIListbox::UpdateLayout(UILayoutHelper* layout)
-{
-	layout->AddVertSpace();
-	layout->AddControl(this);
-	layout->AddVertSpace();
-}
-
 bool UIListbox::HandleCommand(int id, int cmd, LPARAM lParam)
 {
 	if (cmd == LBN_SELCHANGE || cmd == LBN_DBLCLK)
@@ -1333,9 +1274,11 @@ UIMulticolumnListbox::UIMulticolumnListbox(int numColumns)
 {
 	Layout.Height = DEFAULT_LISTBOX_HEIGHT;
 	MinWidth = MIN_CONTROL_WIDTH;
-	MinHeight = DEFAULT_LISTBOX_HEIGHT * 2;
-	TopMargin = VERTICAL_SPACING;
-	BottomMargin = VERTICAL_SPACING;
+	MinHeight = MIN_CONTROL_WIDTH;
+	TopMargin = DEFAULT_MARGIN;
+	BottomMargin = DEFAULT_MARGIN;
+	LeftMargin = DEFAULT_MARGIN;
+	RightMargin = DEFAULT_MARGIN;
 
 	assert(NumColumns > 0 && NumColumns <= MAX_COLUMNS);
 	Items.AddZeroed(numColumns);	// reserve place for header
@@ -1741,13 +1684,6 @@ void UIMulticolumnListbox::Create(UIBaseDialog* dialog)
 	UpdateEnabled();
 }
 
-void UIMulticolumnListbox::UpdateLayout(UILayoutHelper* layout)
-{
-	layout->AddVertSpace();
-	layout->AddControl(this);
-	layout->AddVertSpace();
-}
-
 bool UIMulticolumnListbox::HandleCommand(int id, int cmd, LPARAM lParam)
 {
 	guard(UIMulticolumnListbox::HandleCommand);
@@ -1930,9 +1866,11 @@ UITreeView::UITreeView()
 {
 	Layout.Height = DEFAULT_TREEVIEW_HEIGHT;
 	MinWidth = MIN_CONTROL_WIDTH;
-	MinHeight = DEFAULT_TREEVIEW_HEIGHT;
-	TopMargin = VERTICAL_SPACING;
-	BottomMargin = VERTICAL_SPACING;
+	MinHeight = MIN_CONTROL_WIDTH;
+	TopMargin = DEFAULT_MARGIN;
+	BottomMargin = DEFAULT_MARGIN;
+	LeftMargin = DEFAULT_MARGIN;
+	RightMargin = DEFAULT_MARGIN;
 
 	HashTable = new TreeViewItem*[TREE_HASH_SIZE]; // will be initialized in RemoveAllItems()
 	// create a root item
@@ -2133,13 +2071,6 @@ void UITreeView::Create(UIBaseDialog* dialog)
 	UpdateEnabled();
 }
 
-void UITreeView::UpdateLayout(UILayoutHelper* layout)
-{
-	layout->AddVertSpace();
-	layout->AddControl(this);
-	layout->AddVertSpace();
-}
-
 bool UITreeView::HandleCommand(int id, int cmd, LPARAM lParam)
 {
 	if (cmd == TVN_SELCHANGED)
@@ -2292,8 +2223,10 @@ UIGroup::UIGroup(const char* label, unsigned flags)
 ,	RadioValue(0)
 ,	pRadioValue(&RadioValue)
 {
-	TopMargin = VERTICAL_SPACING;
-	BottomMargin = VERTICAL_SPACING;
+	TopMargin = DEFAULT_MARGIN;
+	BottomMargin = DEFAULT_MARGIN;
+	LeftMargin = DEFAULT_MARGIN;
+	RightMargin = DEFAULT_MARGIN;
 	IsGroup = true;
 }
 
@@ -2303,8 +2236,10 @@ UIGroup::UIGroup(unsigned flags)
 ,	RadioValue(0)
 ,	pRadioValue(&RadioValue)
 {
-	TopMargin = VERTICAL_SPACING;
-	BottomMargin = VERTICAL_SPACING;
+	TopMargin = DEFAULT_MARGIN;
+	BottomMargin = DEFAULT_MARGIN;
+	LeftMargin = DEFAULT_MARGIN;
+	RightMargin = DEFAULT_MARGIN;
 	IsGroup = true;
 }
 
@@ -2441,6 +2376,12 @@ void UIGroup::CreateGroupControls(UIBaseDialog* dialog)
 {
 	guard(UIGroup::CreateGroupControls);
 
+	if (!(Flags & GROUP_NO_BORDER))
+	{
+		// create a group window (border)
+		Wnd = Window(WC_BUTTON, *Label, BS_GROUPBOX | WS_GROUP, 0, dialog);
+	}
+
 	// call 'Create' for all children
 	bool isRadioGroup = false;
 	int controlIndex = 0;
@@ -2453,12 +2394,6 @@ void UIGroup::CreateGroupControls(UIBaseDialog* dialog)
 		if (control->IsRadioButton) isRadioGroup = true;
 	}
 	if (isRadioGroup) InitializeRadioGroup();
-
-	if (!(Flags & GROUP_NO_BORDER))
-	{
-		// create a group window (border)
-		Wnd = Window(WC_BUTTON, *Label, BS_GROUPBOX | WS_GROUP, 0, dialog);
-	}
 
 	unguardf("%s", *Label);
 }
@@ -2481,9 +2416,84 @@ void UIGroup::UpdateSize(UIBaseDialog* dialog)
 	// allow UIGroup-based classes to add own controls
 	AddCustomControls();
 
+	// Call UpdateSize() for all child controls
 	for (UIElement* control = FirstChild; control; control = control->NextChild)
 	{
 		control->UpdateSize(dialog);
+	}
+
+	// Estimate relative sizes for controls which has auto-size (width or height set to -1).
+	float TotalFracSize = 0.0f;
+	int NumAutoSizeControls = 0;
+	int EncodedAutoWidth = 0;
+	for (int pass = 0; pass < 2; pass++)
+	{
+		for (UIElement* control = FirstChild; control; control = control->NextChild)
+		{
+			// Get relevant size of control
+			int Size = 0;
+			if (Flags & GROUP_HORIZONTAL_LAYOUT)
+			{
+				Size = control->Layout.Width;
+			}
+			else
+			{
+				Size = control->Layout.Height;
+			}
+			// UIGroup has special meaning of -1 size, so skip such controls
+			if (Size == -1 && control->IsGroup)
+			{
+				continue;
+			}
+			if (Size == -1)
+			{
+				// Auto-size control
+				if (pass == 0)
+				{
+					NumAutoSizeControls++;
+				}
+				else
+				{
+					// Store computed size back to control
+					if (Flags & GROUP_HORIZONTAL_LAYOUT)
+					{
+						control->Layout.Width = EncodedAutoWidth;
+					}
+					else
+					{
+						control->Layout.Height = EncodedAutoWidth;
+					}
+				}
+			}
+			else if (Size < 0)
+			{
+				// Control with fraction width
+				TotalFracSize += DecodeWidth(Size);
+			}
+		}
+		if (pass == 0)
+		{
+			// Compute automatic size at pass 0
+			if (NumAutoSizeControls == 0 || TotalFracSize >= 1.0f)
+			{
+				break;
+			}
+			EncodedAutoWidth = EncodeWidth((1.0f - TotalFracSize) / NumAutoSizeControls);
+		}
+	}
+}
+
+void UIGroup::UpdateLayout()
+{
+	if (Parent != NULL)
+	{
+		// Do not call UpdateLayout for dialog
+		Super::UpdateLayout();
+	}
+
+	for (UIElement* control = FirstChild; control; control = control->NextChild)
+	{
+		control->UpdateLayout();
 	}
 }
 
@@ -2593,6 +2603,19 @@ bool UICheckboxGroup::HandleCommand(int id, int cmd, LPARAM lParam)
 	return Super::HandleCommand(id, cmd, lParam);
 }
 
+void UICheckboxGroup::UpdateLayout()
+{
+	Super::UpdateLayout();
+
+	//TODO: this is a copy-paste of part of Create() method
+	int checkboxWidth;
+	MeasureTextSize(*Label, &checkboxWidth);
+
+	int checkboxOffset = (Flags & GROUP_NO_BORDER) ? 0 : GROUP_INDENT;
+
+	MoveWindow(CheckboxWnd, Rect.X + checkboxOffset, Rect.Y, min(checkboxWidth + DEFAULT_CHECKBOX_HEIGHT, Rect.Width - checkboxOffset), DEFAULT_CHECKBOX_HEIGHT, FALSE);
+}
+
 
 /*-----------------------------------------------------------------------------
 	UIPageControl
@@ -2644,19 +2667,6 @@ void UIPageControl::Create(UIBaseDialog* dialog)
 	unguard;
 }
 
-void UIPageControl::UpdateLayout(UILayoutHelper* inLayout)
-{
-	inLayout->AddControl(this);
-
-	UILayoutHelper layout(this, Flags);
-
-	for (UIElement* page = FirstChild; page; page = page->NextChild)
-	{
-		layout.CursorX = layout.CursorY = 0; //?? not sure if this is needed
-		page->UpdateLayout(&layout);
-	}
-}
-
 
 /*-----------------------------------------------------------------------------
 	UIBaseDialog
@@ -2667,6 +2677,7 @@ UIBaseDialog::UIBaseDialog()
 ,	NextDialogId(FIRST_DIALOG_ID)
 ,	ShouldCloseOnEsc(false)
 ,	ShouldHideOnClose(false)
+,	bResizeable(false)
 ,	ParentDialog(NULL)
 ,	IconResId(0)
 ,	IsDialogConstructed(false)
@@ -2694,7 +2705,7 @@ void UIBaseDialog::SetGlobalIconResId(int iconResId)
 	GGlobalIconResId = iconResId;
 }
 
-static DLGTEMPLATE* MakeDialogTemplate(int width, int height, const wchar_t* title, const wchar_t* fontName, int fontSize)
+static DLGTEMPLATE* MakeDialogTemplate(int width, int height, const wchar_t* title, const wchar_t* fontName, int fontSize, bool resizeable)
 {
 	// This code uses volatile structure DLGTEMPLATEEX. It's described in MSDN, but
 	// cannot be represented as a structure. We're building DLGTEMPLATEEX here.
@@ -2738,6 +2749,11 @@ static DLGTEMPLATE* MakeDialogTemplate(int width, int height, const wchar_t* tit
 	dlg1->cx = width;
 	dlg1->cy = height;
 
+	if (resizeable)
+	{
+		dlg1->style |= WS_THICKFRAME;
+	}
+
 	int titleLen = (int)wcslen(title);
 	assert(titleLen < MAX_TITLE_LEN);
 	wcscpy(dlg1->title, title);
@@ -2772,7 +2788,8 @@ bool UIBaseDialog::ShowDialog(bool modal, const char* title, int width, int heig
 	// convert title to unicode
 	wchar_t wTitle[MAX_TITLE_LEN];
 	mbstowcs(wTitle, title, MAX_TITLE_LEN);
-	DLGTEMPLATE* tmpl = MakeDialogTemplate(width, height, wTitle, L"MS Shell Dlg", 8);
+	// use fixed constants for window size, will be changed after creation anyway
+	DLGTEMPLATE* tmpl = MakeDialogTemplate(100, 50, wTitle, L"MS Shell Dlg", 8, bResizeable);
 
 	HWND ParentWindow = GMainWindow;
 	if (GCurrentDialog) ParentWindow = GCurrentDialog->GetWnd();
@@ -2998,6 +3015,34 @@ void UIBaseDialog::CloseDialog(bool cancel)
 	}
 }
 
+void UIBaseDialog::SetWindowSize(int width, int height)
+{
+	if (!Wnd) return;
+
+	SetWindowPos(Wnd, NULL, 0, 0, width, height, SWP_NOMOVE);
+	WindowsSizeChanged();
+}
+
+void UIBaseDialog::WindowsSizeChanged()
+{
+	RECT r;
+	GetClientRect(Wnd, &r);
+	int clientWidth = r.right - r.left;
+	int clientHeight = r.bottom - r.top;
+
+	Layout.X = DEFAULT_HORZ_BORDER;
+	Layout.Y = VERTICAL_SPACING;
+	Layout.Width = clientWidth - DEFAULT_HORZ_BORDER*2;
+	Layout.Height = clientHeight - VERTICAL_SPACING;
+
+	Rect = Layout;
+
+	ComputeLayout();
+
+	UpdateLayout();
+	Repaint();
+}
+
 static void (*GUIExceptionHandler)() = NULL;
 
 void UISetExceptionHandler(void (*Handler)())
@@ -3065,44 +3110,68 @@ INT_PTR UIBaseDialog::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		if (icon)
 			SendMessage(hWnd, WM_SETICON, (WPARAM)ICON_BIG, (LPARAM)LoadIcon(hInstance, MAKEINTRESOURCE(icon)));
 
-		// compute client area width
-		RECT r;
-		GetClientRect(Wnd, &r);
-		int clientWidth = r.right - r.left;
-		int clientHeight = r.bottom - r.top;
-
-		// prepare layout variables
-#if !NEW_LAYOUT_CODE
-		Layout.X = DEFAULT_HORZ_BORDER;
-		Layout.Y = 0;
-		Layout.Width = clientWidth - DEFAULT_HORZ_BORDER * 2;
-		Layout.Height = 0;
-#else
-		Layout.X = DEFAULT_HORZ_BORDER;
-		Layout.Y = VERTICAL_SPACING;
-		Layout.Width = clientWidth;
-		Layout.Height = clientHeight;
-#endif
-		Rect = Layout;
-
-		// release old controls, if dialog is opened 2nd time
+		// release old controls, if dialog is opened for the 2nd time
 		ReleaseControls();
-		// create controls
+
+		// create controls (UIElement objects, not windows)
 		IsDialogConstructed = false;
 		InitUI();
-		IsDialogConstructed = true;
+
+		// prepare layout variables
+
+		// adjust layout taking into account margins, so "client rect" of the window
+		// will match original Layout.Width and Layout.Height
+		Layout.X = DEFAULT_HORZ_BORDER;
+		Layout.Y = VERTICAL_SPACING;
+		if (Layout.Width > 0)
+		{
+			Layout.Width -= DEFAULT_HORZ_BORDER*2;
+		}
+		if (Layout.Height > 0)
+		{
+			Layout.Height -= VERTICAL_SPACING;
+		}
+
 
 		UpdateSize(this);
-#if !NEW_LAYOUT_CODE
-		UpdateLayout(NULL); //?? review
-#else
+
+		Rect = Layout;
+
+		// compute window's minimal size
+		if (bResizeable)
+		{
+			// perform ComputeLayout() call with zero Rect.Width and Rect.Height to compute
+			// minimal window size
+			Rect.Width = Rect.Height = 0;
+			ComputeLayout();
+			MinWidth = Rect.Width + DEFAULT_HORZ_BORDER*2;
+			MinHeight = Rect.Height + VERTICAL_SPACING;
+		}
+
 		if (Layout.Width <= 0 || Layout.Height <= 0)
 		{
-			ComputeLayout();
+			// one of dimensions unknown
+			if (!(Layout.Width <= 0 && Layout.Height <= 0 && bResizeable))
+			{
+				// we've already computed case with both dimensions unknown when bResizeable is true,
+				// so call ComputeLayout() only for other cases
+				Rect = Layout;
+				ComputeLayout();
+			}
 		}
-		ComputeLayout();
-#endif
+		else
+		{
+			if (bResizeable)
+			{
+				// for bResizeable case, we should restore Rect as it contains minimal size now
+				Rect = Layout;
+			}
+		}
 
+		// perform layout of controls, here we should have valid Rect.Width and Rect.Height.
+		ComputeLayout();
+
+		// create all controls (OS level)
 		CreateGroupControls(this);
 
 		if (Menu)
@@ -3112,20 +3181,22 @@ INT_PTR UIBaseDialog::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		}
 
 		// adjust window size taking into account desired client size and center window on screen
+		RECT r;
 		r.left   = 0;
 		r.top    = 0;
-#if !NEW_LAYOUT_CODE
-		r.right  = clientWidth;
-#else
-		r.right  = Rect.Width + DEFAULT_HORZ_BORDER * 2;
-#endif
+		r.right  = Rect.Width + DEFAULT_HORZ_BORDER*2;
 		r.bottom = Rect.Y + Rect.Height;
 
+		// position window at center of screen
 		int newX = (GetSystemMetrics(SM_CXSCREEN) - (r.right - r.left)) / 2;
 		int newY = (GetSystemMetrics(SM_CYSCREEN) - (r.bottom - r.top)) / 2;
 
+		// adjust size to take window borders into account, and set window's position
 		AdjustWindowRect(&r, GetWindowLong(Wnd, GWL_STYLE), (Menu != NULL) ? TRUE : FALSE);
 		SetWindowPos(hWnd, NULL, newX, newY, r.right - r.left, r.bottom - r.top, 0);
+
+		// put IsDialogConstructed as the very last operation here
+		IsDialogConstructed = true;
 
 		return TRUE;
 	}
@@ -3138,6 +3209,30 @@ INT_PTR UIBaseDialog::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
 	if (msg == WM_DESTROY)
 		return TRUE;
+
+	// resize window handler
+	if (msg == WM_SIZE && bResizeable && IsDialogConstructed)
+	{
+		WindowsSizeChanged();
+		return TRUE;
+	}
+
+	// query minimal window size
+	if (msg == WM_GETMINMAXINFO && bResizeable && IsDialogConstructed)
+	{
+		RECT r;
+		r.left = 0;
+		r.top = 0;
+		r.right = MinWidth;
+		r.bottom = MinHeight;
+		AdjustWindowRect(&r, GetWindowLong(Wnd, GWL_STYLE), (Menu != NULL) ? TRUE : FALSE);
+
+		MINMAXINFO* info = (MINMAXINFO*)lParam;
+		info->ptMinTrackSize.x = r.right - r.left;
+		info->ptMinTrackSize.y = r.bottom - r.top;
+
+		return TRUE;
+	}
 
 	int cmd = -1;
 	int id = 0;

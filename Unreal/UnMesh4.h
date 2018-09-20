@@ -67,11 +67,7 @@ struct FReferencePose
 	FName					PoseName;
 	TArray<FTransform>		ReferencePose;
 
-	friend FArchive& operator<<(FArchive& Ar, FReferencePose& P)
-	{
-		return Ar << P.PoseName << P.ReferencePose;
-		//!! TODO: non-cooked package also has P.ReferenceMesh (no way to detect if this is saved or not!)
-	}
+	friend FArchive& operator<<(FArchive& Ar, FReferencePose& P);
 };
 
 struct FBoneReference
@@ -107,34 +103,7 @@ struct FSmartNameMapping
 	//!! TODO: no data fields here
 	int32 Dummy;
 
-	friend FArchive& operator<<(FArchive& Ar, FSmartNameMapping& N)
-	{
-		FFrameworkObjectVersion::Type FrwVer = FFrameworkObjectVersion::Get(Ar);
-
-		if (FrwVer < FFrameworkObjectVersion::SmartNameRefactor)
-		{
-			// pre-UE4.13 code
-			int16					NextUid;
-			TMap<int16, FName>		UidMap;
-			return Ar << NextUid << UidMap;
-		}
-
-		// UE4.13+
-		if (FAnimPhysObjectVersion::Get(Ar) < FAnimPhysObjectVersion::SmartNameRefactorForDeterministicCooking)
-		{
-			// UE4.13-17
-			TMap<FName, FGuid> GuidMap;
-			Ar << GuidMap;
-		}
-
-		if (FrwVer >= FFrameworkObjectVersion::MoveCurveTypesToSkeleton)
-		{
-			// UE4.14+
-			TMap<FName, FCurveMetaData> CurveMetaDataMap;
-			Ar << CurveMetaDataMap;
-		}
-		return Ar;
-	}
+	friend FArchive& operator<<(FArchive& Ar, FSmartNameMapping& N);
 };
 
 
@@ -423,6 +392,7 @@ struct FTrackToSkeletonMap
 
 	BEGIN_PROP_TABLE
 		PROP_INT(BoneTreeIndex)
+		PROP_DROP(SkeletonIndex)	// this field was deprecated even before 4.0 release, however it appears in some old assets
 	END_PROP_TABLE
 
 	friend FArchive& operator<<(FArchive& Ar, FTrackToSkeletonMap& M)

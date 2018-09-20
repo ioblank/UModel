@@ -10,9 +10,9 @@ void RegisterExporter(const char *ClassName, ExporterFunc_t Func);
 // wrapper to avoid typecasts to ExporterFunc_t
 // T should be an UObject-derived class
 template<class T>
-FORCEINLINE void RegisterExporter(const char *ClassName, void (*Func)(const T*))
+FORCEINLINE void RegisterExporter(void (*Func)(const T*))
 {
-	RegisterExporter(ClassName, (ExporterFunc_t)Func);
+	RegisterExporter(T::StaticGetTypeinfo()->Name + 1, (ExporterFunc_t)Func);
 }
 
 // This function will clear list of already exported objects
@@ -63,6 +63,9 @@ void ExportStaticMesh(const CStaticMesh *Mesh);
 // MD5Mesh
 void ExportMd5Mesh(const CSkeletalMesh *Mesh);
 void ExportMd5Anim(const CAnimSet *Anim);
+// glTF
+void ExportSkeletalMeshGLTF(const CSkeletalMesh* Mesh);
+void ExportStaticMeshGLTF(const CStaticMesh* Mesh);
 // 3D
 void Export3D (const UVertMesh *Mesh);
 // TGA

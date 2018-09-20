@@ -299,6 +299,7 @@ struct FSkinWeightInfo
 				Ar << BoneIndex2[i];
 			for (int i = 0; i < GNumSkelInfluences; i++)
 				Ar << BoneWeight2[i];
+#if 0
 			// check if sorting needed (possibly 2nd half of influences has zero weight)
 			uint32 PackedWeight2 = * (uint32*) &BoneWeight2[4];
 			if (PackedWeight2 != 0)
@@ -318,6 +319,7 @@ struct FSkinWeightInfo
 				// add remaining weight to the first bone
 				BoneWeight2[0] += ExtraWeight;
 			}
+#endif
 			// copy influences to vertex
 			for (int i = 0; i < NUM_INFLUENCES_UE4; i++)
 			{
@@ -351,7 +353,20 @@ struct FSkelMeshVertexBase
 	void SerializeForEditor(FArchive& Ar)
 	{
 		Ar << Pos;
-		Ar << Normal[0] << Normal[1] << Normal[2];
+		if (FRenderingObjectVersion::Get(Ar) < FRenderingObjectVersion::IncreaseNormalPrecision)
+		{
+			Ar << Normal[0] << Normal[1] << Normal[2];
+		}
+		else
+		{
+			// New normals are stored with full floating point precision
+			FVector NewNormalX, NewNormalY;
+			FVector4 NewNormalZ;
+			Ar << NewNormalX << NewNormalY << NewNormalZ;
+			Normal[0] = NewNormalX;
+			Normal[1] = NewNormalY;
+			Normal[2] = NewNormalZ;
+		}
 	}
 };
 
@@ -541,6 +556,7 @@ struct FSkelMeshSection4
 	int32					BaseIndex;
 	int32					NumTriangles;
 	bool					bDisabled;				// deprecated in UE4.19
+	int32					GenerateUpToLodIndex;	// added in UE4.20
 	int16					CorrespondClothSectionIndex; // deprecated in UE4.19
 
 	// Data from FSkelMeshChunk, appeared in FSkelMeshSection after UE4.13
@@ -672,6 +688,10 @@ struct FSkelMeshSection4
 			if (FReleaseObjectVersion::Get(Ar) >= FReleaseObjectVersion::AddSkeletalMeshSectionDisable)
 			{
 				Ar << S.bDisabled;
+			}
+			if (FSkeletalMeshCustomVersion::Get(Ar) >= FSkeletalMeshCustomVersion::SectionIgnoreByReduceAdded)
+			{
+				Ar << S.GenerateUpToLodIndex;
 			}
 		}
 
@@ -1123,7 +1143,8 @@ struct FStaticLODModel4
 		guard(FStaticLODModel4::SerializeRenderItem);
 
 		FStripDataFlags StripFlags(Ar);
-//		FSkeletalMeshCustomVersion::Type SkelMeshVer = FSkeletalMeshCustomVersion::Get(Ar);
+
+		//TODO: check 'MinLodStripFlag' (UE4.20)
 
 		Lod.Sections.Serialize2<FSkelMeshSection4::SerializeRenderItem>(Ar);
 #if DEBUG_SKELMESH
@@ -1409,9 +1430,6 @@ void USkeletalMesh4::ConvertMesh()
 			D->Position = CVT(V->Pos);
 			UnpackNormals(V->Normal, *D);
 			// convert influences
-	#if DEBUG_SKELMESH
-			int TotalWeight = 0;
-	#endif
 			int i2 = 0;
 			unsigned PackedWeights = 0;
 			for (int i = 0; i < NUM_INFLUENCES_UE4; i++)
@@ -1422,14 +1440,8 @@ void USkeletalMesh4::ConvertMesh()
 				PackedWeights |= BoneWeight << (i2 * 8);
 				D->Bone[i2]   = (*BoneMap)[BoneIndex];
 				i2++;
-	#if DEBUG_SKELMESH
-				TotalWeight += BoneWeight;
-	#endif
 			}
 			D->PackedWeights = PackedWeights;
-	#if DEBUG_SKELMESH
-			assert(TotalWeight == 255);
-	#endif
 			if (i2 < NUM_INFLUENCES_UE4) D->Bone[i2] = INDEX_NONE; // mark end of list
 		}
 
@@ -2080,22 +2092,22 @@ void UStaticMesh4::ConvertMesh()
 
 struct FRawMesh
 {
-	TArray<int>			FaceMaterialIndices;
-	TArray<int>			FaceSmoothingMask;
+	TArray<int32>		FaceMaterialIndices;
+	TArray<uint32>		FaceSmoothingMask;
 	TArray<FVector>		VertexPositions;
-	TArray<int>			WedgeIndices;
+	TArray<int32>		WedgeIndices;
 	TArray<FVector>		WedgeTangent;
 	TArray<FVector>		WedgeBinormal;
 	TArray<FVector>		WedgeNormal;
 	TArray<FVector2D>	WedgeTexCoords[MAX_STATIC_UV_SETS_UE4];
 	TArray<FColor>		WedgeColors;
-	TArray<int>			MaterialIndexToImportIndex;
+	TArray<int32>		MaterialIndexToImportIndex;
 
 	void Serialize(FArchive& Ar)
 	{
 		guard(FRawMesh::Serialize);
 
-		int Version, LicenseeVersion;
+		int32 Version, LicenseeVersion;
 		Ar << Version << LicenseeVersion;
 
 		Ar << FaceMaterialIndices;

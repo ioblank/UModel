@@ -12,17 +12,16 @@ UIStartupDialog::UIStartupDialog(CStartupSettings& settings)
 
 bool UIStartupDialog::Show()
 {
-	if (!ShowModal("Umodel Startup Options", 360, 200))
+	if (!ShowModal("Umodel Startup Options", -1, -1))
 		return false;
 
 	// process some options
 
 	// GameOverride
-	Opt.GameOverride = GAME_UNKNOWN;
 	int selectedGame = OverrideGameCombo->GetSelectionIndex();
-	if (OverrideGameGroup->IsChecked() && (selectedGame >= 0))
+	if (!OverrideGameGroup->IsChecked() || (selectedGame < 0))
 	{
-		Opt.GameOverride = SelectedGameEnums[selectedGame];
+		Opt.GameOverride = GAME_UNKNOWN;
 	}
 
 	return true;
@@ -50,8 +49,7 @@ void UIStartupDialog::InitUI()
 			.Expose(OverrideEngineCombo)
 			.SetCallback(BIND_MEMBER(&UIStartupDialog::FillGameList, this))
 			.SetWidth(EncodeWidth(0.4f))
-			+ NewControl(UISpacer)
-			+ NewControl(UICombobox)
+			+ NewControl(UICombobox, &Opt.GameOverride)
 			.Expose(OverrideGameCombo)
 		]
 	];
@@ -76,15 +74,13 @@ void UIStartupDialog::InitUI()
 	{
 		OverrideEngineCombo->SelectItem(GetEngineName(Opt.GameOverride));
 		FillGameList();
-		int gameIndex = SelectedGameEnums.FindItem(Opt.GameOverride);
-		if (gameIndex >= 0)
-			OverrideGameCombo->SelectItem(gameIndex);
 	}
 
 	NewControl(UIGroup, "Engine classes to load", GROUP_HORIZONTAL_LAYOUT)
 	.SetParent(this)
 	[
 		NewControl(UIGroup, GROUP_NO_BORDER)
+		.SetWidth(EncodeWidth(0.5f))
 		[
 			NewControl(UILabel, "Common classes:")
 			+ NewControl(UICheckbox, "Skeletal mesh", &Opt.UseSkeletalMesh)
@@ -94,6 +90,7 @@ void UIStartupDialog::InitUI()
 			+ NewControl(UICheckbox, "Lightmaps",     &Opt.UseLightmapTexture)
 		]
 		+ NewControl(UIGroup, GROUP_NO_BORDER)
+		.SetWidth(EncodeWidth(0.5f))
 		[
 			NewControl(UILabel, "Export-only classes:")
 			+ NewControl(UICheckbox, "Sound",     &Opt.UseSound)
@@ -107,7 +104,6 @@ void UIStartupDialog::InitUI()
 		NewControl(UIGroup, GROUP_HORIZONTAL_LAYOUT|GROUP_NO_BORDER)
 		[
 			NewControl(UIGroup, "Package compression", GROUP_HORIZONTAL_LAYOUT|GROUP_HORIZONTAL_SPACING)
-			.SetWidth(EncodeWidth(0.35f))
 			.SetRadioVariable(&Opt.PackageCompression)
 			[
 				NewControl(UIRadioButton, "Auto", 0)
@@ -115,7 +111,6 @@ void UIStartupDialog::InitUI()
 				+ NewControl(UIRadioButton, "zlib", COMPRESS_ZLIB)
 				+ NewControl(UIRadioButton, "LZX", COMPRESS_LZX)
 			]
-			+ NewControl(UISpacer)
 			+ NewControl(UIGroup, "Platform", GROUP_HORIZONTAL_LAYOUT|GROUP_HORIZONTAL_SPACING)
 			.SetRadioVariable(&Opt.Platform)
 			[
@@ -138,7 +133,6 @@ void UIStartupDialog::InitUI()
 		+ NewControl(UIButton, "OK")
 		.SetWidth(EncodeWidth(0.2f))
 		.SetOK()
-		+ NewControl(UISpacer)
 		+ NewControl(UIButton, "Cancel")
 		.SetWidth(EncodeWidth(0.2f))
 		.SetCancel()
@@ -160,12 +154,12 @@ static int CompareGames(const GameInfo* const* a, const GameInfo* const* b)
 // Fill list of game titles made with selected engine
 void UIStartupDialog::FillGameList()
 {
+	guard(FillGameList);
+
 	OverrideGameCombo->RemoveAllItems();
 	const char* selectedEngine = OverrideEngineCombo->GetSelectionText();
 
-	TArray<const GameInfo*> SelectedGameInfos;
-	SelectedGameInfos.Empty(128);
-	SelectedGameEnums.Empty(128);
+	TStaticArray<const GameInfo*, 256> SelectedGameInfos;
 
 	int numEngineEntries = 0;
 	int i;
@@ -198,18 +192,18 @@ void UIStartupDialog::FillGameList()
 			{
 				char buf[128];
 				appSprintf(ARRAY_ARG(buf), "Unreal engine 4.%d", ue4ver);
-				OverrideGameCombo->AddItem(buf);
-				SelectedGameEnums.Add(GAME_UE4(ue4ver));
+				OverrideGameCombo->AddItem(buf, GAME_UE4(ue4ver));
 			}
 			continue;
 		}
 #endif // UNREAL4
-		OverrideGameCombo->AddItem(SelectedGameInfos[i]->Name);
-		SelectedGameEnums.Add(SelectedGameInfos[i]->Enum);
+		OverrideGameCombo->AddItem(SelectedGameInfos[i]->Name, SelectedGameInfos[i]->Enum);
 	}
 
 	// select engine item
 	OverrideGameCombo->SelectItem(0);
+
+	unguard;
 }
 
 

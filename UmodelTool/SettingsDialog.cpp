@@ -11,7 +11,7 @@ UISettingsDialog::UISettingsDialog(CUmodelSettings& settings)
 
 bool UISettingsDialog::Show()
 {
-	if (!ShowModal("Options", 360, 200))
+	if (!ShowModal("Options", 480, -1))
 		return false;
 
 	*OptRef = Opt;
@@ -32,9 +32,11 @@ void UISettingsDialog::InitUI()
 	(*this)
 	[
 		NewControl(UIGroup, GROUP_HORIZONTAL_LAYOUT|GROUP_NO_BORDER)
+		.SetWidth(EncodeWidth(1.0f))
 		[
 /*			NewControl(UIGroup, "Display")
 			+*/ NewControl(UIGroup, "Export")
+			.SetWidth(EncodeWidth(1.0f))
 			[
 				MakeExportOptions()
 			]
@@ -45,7 +47,6 @@ void UISettingsDialog::InitUI()
 			+ NewControl(UIButton, "OK")
 			.SetWidth(EncodeWidth(0.2f))
 			.SetOK()
-			+ NewControl(UISpacer)
 			+ NewControl(UIButton, "Cancel")
 			.SetWidth(EncodeWidth(0.2f))
 			.SetCancel()
@@ -67,7 +68,19 @@ UIElement& UISettingsDialog::MakeExportOptions()
 		]
 		+ NewControl(UIGroup, "Mesh Export")
 		[
-			NewControl(UICheckbox, "Export skeletal mesh and animation to md5mesh/md5anim", &Opt.Export.ExportMd5Mesh)
+			NewControl(UIGroup, GROUP_HORIZONTAL_LAYOUT|GROUP_NO_BORDER)
+			[
+				NewControl(UILabel, "Skeletal Mesh:").SetY(4).SetAutoSize()
+				+ NewControl(UICombobox, &Opt.Export.SkeletalMeshFormat)
+					.AddItem("ActorX (psk)", EExportMeshFormat::psk)
+					.AddItem("glTF 2.0", EExportMeshFormat::gltf)
+					.AddItem("md5mesh", EExportMeshFormat::md5)
+				+ NewControl(UISpacer)
+				+ NewControl(UILabel, "Static Mesh:").SetY(4).SetAutoSize()
+				+ NewControl(UICombobox, &Opt.Export.StaticMeshFormat)
+					.AddItem("ActorX (pskx)", EExportMeshFormat::psk)
+					.AddItem("glTF 2.0", EExportMeshFormat::gltf)
+			]
 			+ NewControl(UICheckbox, "Export LODs", &Opt.Export.ExportMeshLods)
 		]
 		+ NewControl(UICheckbox, "Export compressed textures to dds format", &Opt.Export.ExportDdsTexture)

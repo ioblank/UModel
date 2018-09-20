@@ -19,6 +19,7 @@ UmodelExport/
 UmodelSaved/
 Screenshots/
 notify.log
+umodel.cfg
 
 # Executable files and pdb
 umodel.pdb
@@ -26,3 +27,7 @@ umodel.pdb
 Tools/**/*.exe
 Tools/**/*.pdb
 Docs/ObjectVersion.h
+
+# UI_Dev
+Tools/UITest/vs/Debug/
+Tools/UITest/vs/Release/

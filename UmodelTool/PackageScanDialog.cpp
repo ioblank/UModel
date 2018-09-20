@@ -10,6 +10,8 @@ class UIPackageScanDialog : public UIBaseDialog
 public:
 	void Show()
 	{
+		SetResizeable();
+
 		UIProgressDialog progress;
 		progress.Show("Scanning packages");
 		progress.SetDescription("Scanning package");
@@ -18,7 +20,7 @@ public:
 		progress.CloseDialog();
 
 		if (done)
-			ShowModal("Package version report", 400, 300);
+			ShowModal("Package version report", 475, 370);
 	}
 
 	virtual void InitUI()
@@ -29,7 +31,7 @@ public:
 		(*this)
 		[
 			NewControl(UIMulticolumnListbox, 4)
-				.SetHeight(300)
+				.SetHeight(-1)
 				.Expose(listbox)
 				.AddColumn("Ver", 60)
 				.AddColumn("Lic", 60)
@@ -41,7 +43,6 @@ public:
 				+ NewControl(UIButton, "Copy")
 				.SetWidth(80)
 				.SetCallback(BIND_MEMBER(&UIPackageScanDialog::CopyToClipboard, this))
-				+ NewControl(UISpacer)
 				+ NewControl(UIButton, "Close")
 				.SetWidth(80)
 				.SetOK()
