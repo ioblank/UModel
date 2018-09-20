@@ -380,7 +380,6 @@ struct FTexture2DMipMap
 	FByteBulkData	Data;	// FTextureMipBulkData
 	int				SizeX;
 	int				SizeY;
-	int				SizeZ;
 
 #if UNREAL3
 	static void Serialize3(FArchive& Ar, FTexture2DMipMap& Mip);
