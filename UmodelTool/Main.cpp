@@ -30,6 +30,7 @@
 #include "PackageUtils.h"
 
 #include "UmodelApp.h"
+#include "UmodelCommands.h"
 #include "Version.h"
 #include "MiscStrings.h"
 
@@ -130,6 +131,7 @@ BEGIN_CLASS_TABLE
 	REGISTER_MATERIAL_CLASSES_U4
 END_CLASS_TABLE
 	REGISTER_MATERIAL_ENUMS_U4
+	REGISTER_MESH_ENUMS_U4
 #endif // UNREAL4
 }
 
@@ -337,8 +339,8 @@ static void PrintUsage()
 			"    -view           (default) visualize object; when no <object> specified\n"
 			"                    will load whole package\n"
 			"    -list           list contents of package\n"
-			"    -save           save the specified packages\n"
 			"    -export         export specified object or whole package\n"
+			"    -save           save specified packages\n"
 			"    -taglist        list of tags to override game autodetection\n"
 			"    -version        display umodel version information\n"
 			"    -help           display this help page\n"
@@ -433,151 +435,6 @@ static void PrintVersionInfo()
 			"UE Viewer (UModel)\n" "%s\n" "%s\n" "%s\n",
 			GBuildString, GCopyrightString, GUmodelHomepage
 	);
-}
-
-
-/*-----------------------------------------------------------------------------
-	Package helpers
------------------------------------------------------------------------------*/
-
-static void CopyStream(FArchive *Src, FILE *Dst, int Count)
-{
-	byte buffer[16384];
-
-	while (Count > 0)
-	{
-		int Size = min(Count, sizeof(buffer));
-		Src->Serialize(buffer, Size);
-		if (fwrite(buffer, Size, 1, Dst) != 1) appError("Write failed");
-		Count -= Size;
-	}
-}
-
-bool SavePackages(const TArray<UnPackage*> *Packages, IProgressCallback* progress)
-{
-	guard(SavePackages);
-
-	appPrintf("Saving packages ...\n");
-
-	for (int i = 0; i < Packages->Num(); i++)
-	{
-		if (progress && !progress->Tick()) return false;
-		UnPackage* pkg = (*(Packages))[i];
-		const CGameFileInfo* file = appFindGameFile(pkg->Filename);
-		if (!file)
-		{
-			continue;
-		}
-
-		static const char* additionalExtensions[] =
-		{
-			"",				// empty string for original extension
-#if UNREAL4
-			".ubulk",
-			".uexp",
-#endif // UNREAL4
-		};
-
-		for (int ext = 0; ext < ARRAY_COUNT(additionalExtensions); ext++)
-		{
-			char SrcFile[MAX_PACKAGE_PATH];
-			appStrncpyz(SrcFile, pkg->Filename, ARRAY_COUNT(SrcFile));
-
-#if UNREAL4
-			if (ext > 0)
-			{
-				char* s = strrchr(SrcFile, '.');
-				if (s && !stricmp(s, ".uasset"))
-				{
-					// Find additional file by replacing .uasset extension
-					strcpy(s, additionalExtensions[ext]);
-					file = appFindGameFile(SrcFile);
-					if (!file)
-					{
-						continue;
-					}
-				}
-				else
-				{
-					// there's no needs to process this file anymore - main file was already exported, no other files will exist
-					break;
-				}
-			}
-#endif // UNREAL4
-
-			FArchive *Ar = appCreateFileReader(file);
-			if (Ar)
-			{
-				guard(SaveFile);
-				// prepare destination file
-				char OutFile[1024];
-				appSprintf(ARRAY_ARG(OutFile), "%s/%s", *GSettings.Export.ExportPath, SrcFile);
-				appMakeDirectoryForFile(OutFile);
-				FILE *out = fopen(OutFile, "wb");
-				// copy data
-				CopyStream(Ar, out, Ar->GetFileSize());
-				// cleanup
-				delete Ar;
-				fclose(out);
-				unguardf("%s", file->RelativeName);
-			}
-		}
-	}
-
-	return true;
-
-	unguard;
-}
-
-// Export all loaded objects.
-bool ExportObjects(const TArray<UObject*> *Objects, IProgressCallback* progress)
-{
-	guard(ExportObjects);
-
-	appPrintf("Exporting objects ...\n");
-
-	// export object(s), if possible
-	UnPackage* notifyPackage = NULL;
-	bool hasObjectList = (Objects != NULL) && Objects->Num();
-
-	//?? when 'Objects' passed, probably iterate over that list instead of GObjObjects
-	for (int idx = 0; idx < UObject::GObjObjects.Num(); idx++)
-	{
-		if (progress && !progress->Tick()) return false;
-		UObject* ExpObj = UObject::GObjObjects[idx];
-		bool objectSelected = !hasObjectList || (Objects->FindItem(ExpObj) >= 0);
-
-		if (!objectSelected) continue;
-
-		if (notifyPackage != ExpObj->Package)
-		{
-			notifyPackage = ExpObj->Package;
-			appSetNotifyHeader(notifyPackage->Filename);
-		}
-
-		bool done = ExportObject(ExpObj);
-
-		if (!done && hasObjectList)
-		{
-			// display warning message only when failed to export object, specified from command line
-			appPrintf("ERROR: Export object %s: unsupported type %s\n", ExpObj->Name, ExpObj->GetClassName());
-		}
-	}
-
-	return true;
-
-	unguard;
-}
-
-
-void DisplayPackageStats(const TArray<UnPackage*> &Packages)
-{
-	TArray<ClassStats> stats;
-	CollectPackageStats(Packages, stats);
-
-	appPrintf("Class statistics:\n");
-	for (int i = 0; i < stats.Num(); i++)
-		appPrintf("%5d %s\n", stats[i].Count, stats[i].Name);
 }
 
 
@@ -714,6 +571,11 @@ static void CheckHexAesKey()
 bool UE4EncryptedPak()
 {
 #if HAS_UI
+	// Don't ask for a key more than once
+	static bool lock = false;
+	if (lock) return false;
+	lock = true;
+
 	GAesKey = GApplication.ShowUE4AesKeyDialog();
 	GAesKey.TrimStartAndEndInline();
 	CheckHexAesKey();
@@ -825,8 +687,8 @@ int main(int argc, char **argv)
 		CMD_Check,
 		CMD_PkgInfo,
 		CMD_List,
-		CMD_Save,
 		CMD_Export,
+		CMD_Save,
 	};
 
 	static byte mainCmd = CMD_View;
@@ -850,8 +712,8 @@ int main(int argc, char **argv)
 			OPT_VALUE("view",    mainCmd, CMD_View)
 			OPT_VALUE("dump",    mainCmd, CMD_Dump)
 			OPT_VALUE("check",   mainCmd, CMD_Check)
-			OPT_VALUE("save",    mainCmd, CMD_Save)
 			OPT_VALUE("export",  mainCmd, CMD_Export)
+			OPT_VALUE("save",    mainCmd, CMD_Save)
 			OPT_VALUE("pkginfo", mainCmd, CMD_PkgInfo)
 			OPT_VALUE("list",    mainCmd, CMD_List)
 #if VSTUDIO_INTEGRATION
@@ -1076,6 +938,9 @@ int main(int argc, char **argv)
 		appSetRootDirectory(".");			// scan for packages
 	}
 
+	bool bShouldLoadPackages = (mainCmd != CMD_Save);
+	TArray<const CGameFileInfo*> GameFiles;
+
 	// Try to load all packages first.
 	// Note: in this code, packages will be loaded without creating any exported objects.
 	for (int i = 0; i < packagesToLoad.Num(); i++)
@@ -1092,19 +957,23 @@ int main(int argc, char **argv)
 		{
 			for (int j = 0; j < Files.Num(); j++)
 			{
-				UnPackage* Package = UnPackage::LoadPackage(Files[j]->RelativeName);
-				Packages.Add(Package);
+				GameFiles.Add(Files[j]);
+				if (bShouldLoadPackages)
+				{
+					UnPackage* Package = UnPackage::LoadPackage(Files[j]->RelativeName);
+					Packages.Add(Package);
+				}
 			}
 		}
 	}
 
 #if !HAS_UI
-	if (!Packages.Num())
+	if (!GameFiles.Num())
 	{
 		CommandLineError("failed to load provided packages");
 	}
 #else
-	if (!Packages.Num())
+	if (!GameFiles.Num())
 	{
 		if (mainCmd != CMD_View)
 		{
@@ -1141,6 +1010,12 @@ int main(int argc, char **argv)
 		return 0;
 	}
 
+	if (mainCmd == CMD_Save)
+	{
+		SavePackages(GameFiles);
+		return 0;
+	}
+
 	// register exporters and classes
 	InitClassAndExportSystems(Packages[0]->Game);
 
@@ -1149,6 +1024,8 @@ int main(int argc, char **argv)
 		DisplayPackageStats(Packages);
 		return 0;					// already displayed when loaded package; extend it?
 	}
+
+	bool bShouldLoadObjects = (mainCmd != CMD_Export) || (objectsToLoad.Num() > 0);
 
 	// load requested objects if any, or fully load everything
 	UObject::BeginLoad();
@@ -1194,7 +1071,7 @@ int main(int argc, char **argv)
 		}
 		appPrintf("Found %d object(s)\n", totalFound);
 	}
-	else
+	else if (bShouldLoadObjects)
 	{
 		// fully load all packages
 		for (int pkg = 0; pkg < Packages.Num(); pkg++)
@@ -1202,13 +1079,7 @@ int main(int argc, char **argv)
 	}
 	UObject::EndLoad();
 
-	if (mainCmd == CMD_Save)
-	{
-		SavePackages(&Packages);
-		return 0;
-	}
-
-	if (!UObject::GObjObjects.Num() && !GApplication.GuiShown)
+	if (!UObject::GObjObjects.Num() && !GApplication.GuiShown && bShouldLoadObjects)
 	{
 		appPrintf("\nThe specified package(s) has no supported objects.\n\n");
 	no_objects:
@@ -1227,8 +1098,16 @@ int main(int argc, char **argv)
 
 	if (mainCmd == CMD_Export)
 	{
-		ExportObjects(&Objects); // will export everything if "Objects" array is empty
-		ResetExportedList();
+		// If we have list of objects, the process only those ones. Otherwise, process full packages.
+		if (Objects.Num())
+		{
+	        ExportObjects(&Objects); // will export everything if "Objects" array is empty, however we're calling ExportPackages() in this case
+			ResetExportedList();
+		}
+		else
+		{
+			ExportPackages(Packages);
+		}
 		if (!GApplication.GuiShown)
 			return 0;
 		// switch to a viewer in GUI mode

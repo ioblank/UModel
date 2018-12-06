@@ -199,6 +199,22 @@ detex
 
 Changes
 ~~~~~~~
+
+29.10.2018
+- UI: added content menu for file list in package dialog
+
+27.10.2018
+- UI: added context menu for folder list in package dialog, contains "export" and "save packages" commands
+- "-export" command line option now uses the same exporting code as GUI, so "-export *" will work correctly without
+  running out of memory
+- added "-save" command line option which saves all specified packages
+
+21.10.2018
+- properly work with UE4 skeletons which has scale on bones
+
+06.10.2018
+- sound export for UE4 attempts to save "ue4opus" file for streamed sounds
+
 22.08.2018
 - implemented glTF skeletal animation export; note that the animation should be opened in mesh viewer for that
 

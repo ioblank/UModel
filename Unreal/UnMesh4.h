@@ -43,22 +43,7 @@ struct FReferenceSkeleton
 	TArray<FTransform>		RefBonePose;
 	TMap<FName, int>		NameToIndexMap;
 
-	friend FArchive& operator<<(FArchive& Ar, FReferenceSkeleton& S)
-	{
-		guard(FReferenceSkeleton<<);
-
-		Ar << S.RefBoneInfo;
-		Ar << S.RefBonePose;
-
-		if (Ar.ArVer >= VER_UE4_REFERENCE_SKELETON_REFACTOR)
-			Ar << S.NameToIndexMap;
-		if (Ar.ArVer < VER_UE4_FIXUP_ROOTBONE_PARENT && S.RefBoneInfo.Num() && S.RefBoneInfo[0].ParentIndex != INDEX_NONE)
-			S.RefBoneInfo[0].ParentIndex = INDEX_NONE;
-
-		return Ar;
-
-		unguard;
-	}
+	friend FArchive& operator<<(FArchive& Ar, FReferenceSkeleton& S);
 };
 
 
@@ -133,6 +118,34 @@ struct FVirtualBone
 	END_PROP_TABLE
 };
 
+enum EBoneTranslationRetargetingMode
+{
+	Animation,				// use translation from animation
+	Skeleton,				// use translation from skeleton
+	AnimationScaled,
+	AnimationRelative,
+	OrientAndScale,
+};
+
+_ENUM(EBoneTranslationRetargetingMode)
+{
+	_E(Animation),
+	_E(Skeleton),
+	_E(AnimationScaled),
+	_E(AnimationRelative),
+	_E(OrientAndScale),
+};
+
+struct FBoneNode
+{
+	DECLARE_STRUCT(FBoneNode)
+
+	EBoneTranslationRetargetingMode TranslationRetargetingMode;
+
+	BEGIN_PROP_TABLE
+		PROP_ENUM2(TranslationRetargetingMode, EBoneTranslationRetargetingMode)
+	END_PROP_TABLE
+};
 
 class USkeleton : public UObject
 {
@@ -143,11 +156,12 @@ public:
 	FGuid					Guid;
 	FSmartNameContainer		SmartNames;
 	TArray<FVirtualBone>	VirtualBones;
+	TArray<FBoneNode>		BoneTree;
 	//!! TODO: sockets
 
 	BEGIN_PROP_TABLE
 		PROP_ARRAY(VirtualBones, FVirtualBone)
-		PROP_DROP(BoneTree)			// was deprecated before 4.0 release in favor of ReferenceSkeleton
+		PROP_ARRAY(BoneTree, FBoneNode)
 		PROP_DROP(Notifies)			// not working with notifies in our program
 	END_PROP_TABLE
 
@@ -501,6 +515,7 @@ public:
 
 	BEGIN_PROP_TABLE
 		PROP_STRUC(RawCurveData, FRawCurveTracks)
+		PROP_DROP(Notifies)			// not working with notifies in our program
 	END_PROP_TABLE
 
 	virtual void Serialize(FArchive& Ar);
@@ -518,6 +533,37 @@ _ENUM(EAnimInterpolationType)
 	_E(Step),
 };
 
+enum EAdditiveAnimationType
+{
+	AAT_None,
+	AAT_LocalSpaceBase,
+	AAT_RotationOffsetMeshSpace,
+};
+
+_ENUM(EAdditiveAnimationType)
+{
+	_E(AAT_None),
+	_E(AAT_LocalSpaceBase),
+	_E(AAT_RotationOffsetMeshSpace),
+};
+
+struct FCompressedSegment
+{
+	int32					StartFrame;
+	int32					NumFrames;
+	int32					ByteStreamOffset;
+	AnimationCompressionFormat TranslationCompressionFormat;
+	AnimationCompressionFormat RotationCompressionFormat;
+	AnimationCompressionFormat ScaleCompressionFormat;
+
+	friend FArchive& operator<<(FArchive& Ar, FCompressedSegment& S)
+	{
+		Ar << S.StartFrame << S.NumFrames << S.ByteStreamOffset;
+		Ar << (byte&)S.TranslationCompressionFormat << (byte&)S.RotationCompressionFormat << (byte&)S.ScaleCompressionFormat;
+		return Ar;
+	}
+};
+
 class UAnimSequence4 : public UAnimSequenceBase
 {
 	DECLARE_CLASS(UAnimSequence4, UAnimSequenceBase);
@@ -527,6 +573,7 @@ public:
 	float					SequenceLength;
 	TArray<FRawAnimSequenceTrack> RawAnimationData;
 	TArray<uint8>			CompressedByteStream;
+	TArray<FCompressedSegment> CompressedSegments;
 	bool					bUseRawDataOnly;
 
 	AnimationKeyFormat		KeyEncodingFormat;
@@ -539,6 +586,7 @@ public:
 	TArray<FTrackToSkeletonMap> CompressedTrackToSkeletonMapTable;	// used for compressed data, missing before 4.12
 	FRawCurveTracks			CompressedCurveData;
 	EAnimInterpolationType	Interpolation;
+	EAdditiveAnimationType	AdditiveAnimType;
 
 	BEGIN_PROP_TABLE
 		PROP_INT(NumFrames)
@@ -555,6 +603,7 @@ public:
 		PROP_ARRAY(CompressedTrackToSkeletonMapTable, FTrackToSkeletonMap)
 		PROP_STRUC(CompressedCurveData, FRawCurveTracks)
 		PROP_ENUM2(Interpolation, EAnimInterpolationType)
+		PROP_ENUM2(AdditiveAnimType, EAdditiveAnimationType)
 	END_PROP_TABLE
 
 	UAnimSequence4()
@@ -564,6 +613,7 @@ public:
 	,	ScaleCompressionFormat(ACF_None)
 	,	KeyEncodingFormat(AKF_ConstantKeyLerp)
 	,	Interpolation(Linear)
+	,	AdditiveAnimType(AAT_None)
 	{}
 
 	virtual void Serialize(FArchive& Ar);
@@ -591,7 +641,13 @@ public:
 	REGISTER_CLASS(FFloatCurve) \
 	REGISTER_CLASS(FRawCurveTracks) \
 	REGISTER_CLASS(FVirtualBone) \
+	REGISTER_CLASS(FBoneNode) \
 	REGISTER_CLASS_ALIAS(UAnimSequence4, UAnimSequence)
+
+#define REGISTER_MESH_ENUMS_U4 \
+	REGISTER_ENUM(EAnimInterpolationType) \
+	REGISTER_ENUM(EBoneTranslationRetargetingMode) \
+	REGISTER_ENUM(EAdditiveAnimationType)
 
 
 #endif // UNREAL4

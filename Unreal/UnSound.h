@@ -95,6 +95,48 @@ struct FSoundFormatData // FFormatContainer item representation
 	}
 };
 
+struct FStreamedAudioChunk
+{
+	FByteBulkData		Data;
+	int32				DataSize;
+	int32				AudioDataSize;
+
+	friend FArchive& operator<<(FArchive& Ar, FStreamedAudioChunk& Chunk)
+	{
+		guard(FStreamedAudioChunk<<);
+
+		bool bCooked;
+		Ar << bCooked;
+		assert(bCooked);
+
+		if (Ar.Game < GAME_UE4(4))
+		{
+			// No FStreamedAudioChunk before UE4.3
+			// UE4.3: only bulk
+			Chunk.Data.Serialize(Ar);
+			Chunk.AudioDataSize = Chunk.DataSize = Chunk.Data.ElementCount;
+		}
+		else if (Ar.Game < GAME_UE4(19))
+		{
+			// UE4.4..UE4.18
+			Chunk.Data.Serialize(Ar);
+			Ar << Chunk.DataSize;
+			Chunk.AudioDataSize = Chunk.DataSize;
+		}
+		else
+		{
+			// UE4.19+
+			Chunk.Data.Serialize(Ar);
+			Ar << Chunk.DataSize;
+			Ar << Chunk.AudioDataSize;
+		}
+
+		return Ar;
+
+		unguard;
+	}
+};
+
 class USoundWave : public UObject // actual parent is USoundBase
 {
 	DECLARE_CLASS(USoundWave, UObject);
@@ -104,12 +146,24 @@ public:
 	FGuid				CompressedDataGuid;
 	TArray<FSoundFormatData> CompressedFormatData; // FFormatContainer in UE4
 
+	FName				StreamedFormat;
+	TArray<FStreamedAudioChunk> StreamingChunks;
+
+	int32				SampleRate;
+	int32				NumChannels;
+
 	USoundWave()
 	:	bStreaming(false)
 	{}
 
 	BEGIN_PROP_TABLE
+		PROP_INT(NumChannels)
+		PROP_INT(SampleRate)
 		PROP_BOOL(bStreaming)
+		PROP_DROP(bHasVirtualizeWhenSilent)
+		PROP_DROP(bVirtualizeWhenSilent)
+		PROP_DROP(Duration)
+		PROP_DROP(RawPCMDataSize) // not marked as UPROPERTY, but appears in UE4 sounds
 	END_PROP_TABLE
 
 	void Serialize(FArchive &Ar)
@@ -145,11 +199,17 @@ public:
 
 		if (bStreaming)
 		{
-			//!! see FStreamedAudioPlatformData::Serialize (AudioDerivedData.cpp)
 			int32 NumChunks;
 			FName AudioFormat;
-			Ar << NumChunks << AudioFormat;
-			appNotify("USoundWave: streaming data: %d chunks in format %s\n", NumChunks, *AudioFormat);
+			Ar << NumChunks << StreamedFormat;
+			appPrintf("WARNING: USoundWave streaming data: %d chunks in format %s\n", NumChunks, *StreamedFormat); //??
+			StreamingChunks.AddDefaulted(NumChunks);
+			for (int i = 0; i < NumChunks; i++)
+			{
+				guard(Chunk);
+				Ar << StreamingChunks[i];
+				unguardf("%d", i);
+			}
 		}
 
 		// some hack to support more games ...

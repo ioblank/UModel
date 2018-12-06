@@ -11,6 +11,7 @@
 #include "TypeConvert.h"
 
 //#define DEBUG_DECOMPRESS	1
+//#define DEBUG_SKELMESH		1
 
 // References in UE4 code: Engine/Public/AnimationCompression.h
 // - FAnimationCompression_PerTrackUtils
@@ -25,6 +26,71 @@
 USkeleton::~USkeleton()
 {
 	if (ConvertedAnim) delete ConvertedAnim;
+}
+
+static CVec3 GetBoneScale(FReferenceSkeleton& Skel, int BoneIndex)
+{
+	CVec3 Scale;
+	Scale.Set(1, 1, 1);
+
+	while (BoneIndex >= 0)
+	{
+		FVector BoneScale = Skel.RefBonePose[BoneIndex].Scale3D;
+		Scale.Scale(CVT(BoneScale));
+		BoneIndex = Skel.RefBoneInfo[BoneIndex].ParentIndex;
+	}
+
+	return Scale;
+}
+
+FArchive& operator<<(FArchive& Ar, FReferenceSkeleton& S)
+{
+	guard(FReferenceSkeleton<<);
+
+	Ar << S.RefBoneInfo;
+	Ar << S.RefBonePose;
+
+	if (Ar.ArVer >= VER_UE4_REFERENCE_SKELETON_REFACTOR)
+		Ar << S.NameToIndexMap;
+
+	int NumBones = S.RefBoneInfo.Num();
+	if (Ar.ArVer < VER_UE4_FIXUP_ROOTBONE_PARENT && NumBones > 0 && S.RefBoneInfo[0].ParentIndex != INDEX_NONE)
+		S.RefBoneInfo[0].ParentIndex = INDEX_NONE;
+
+#if DEBUG_SKELMESH
+	assert(S.RefBonePose.Num() == NumBones);
+	assert(S.NameToIndexMap.Num() == NumBones);
+
+	for (int i = 0; i < NumBones; i++)
+	{
+		appPrintf("bone[%d] \"%s\" parent=%d",
+			i, *S.RefBoneInfo[i].Name, S.RefBoneInfo[i].ParentIndex);
+		FVector Scale = S.RefBonePose[i].Scale3D;
+		CVec3 ScaleDelta;
+		ScaleDelta.Set(Scale.X - 1, Scale.Y - 1, Scale.Z - 1);
+		if (ScaleDelta.GetLengthSq() > 0.001f)
+		{
+			appPrintf(" scale={%g %g %g}", FVECTOR_ARG(Scale));
+		}
+		appPrintf("\n");
+	}
+#endif // DEBUG_SKELMESH
+
+	// Adjust skeleton's scale, if any. Use scale of the root bone.
+	if (NumBones > 0)
+	{
+		// Adjust other bones
+		for (int BoneIndex = 0; BoneIndex < NumBones; BoneIndex++)
+		{
+			FTransform& Transform = S.RefBonePose[BoneIndex];
+			CVec3 Scale = GetBoneScale(S, BoneIndex);
+			CVT(Transform.Translation).Scale(Scale);
+		}
+	}
+
+	return Ar;
+
+	unguard;
 }
 
 FArchive& operator<<(FArchive& Ar, FReferencePose& P)
@@ -127,6 +193,15 @@ void USkeleton::Serialize(FArchive &Ar)
 		DROP_REMAINING_DATA(Ar);
 		return;
 	}
+
+#if DEBUG_SKELMESH
+	appPrintf("Skeleton BoneTree:\n");
+	for (int i = 0; i < BoneTree.Num(); i++)
+	{
+		const FBoneNode& Bone = BoneTree[i];
+		appPrintf("[%d] \"%s\" = %s\n", i, *ReferenceSkeleton.RefBoneInfo[i].Name, EnumToName(Bone.TranslationRetargetingMode));
+	}
+#endif // DEBUG_SKELMESH
 
 	if (Ar.ArVer >= VER_UE4_SKELETON_GUID_SERIALIZATION)
 		Ar << Guid;
@@ -270,6 +345,27 @@ static void FixRotationKeys(CAnimSequence* Anim)
 	}
 }
 
+// Use skeleton's bone settings to adjust animation sequences
+void AdjustSequenceBySkeleton(USkeleton* Skel, CAnimSequence* Anim)
+{
+	guard(AdjustSequenceBySkeleton);
+
+	if (Skel->ReferenceSkeleton.RefBoneInfo.Num() == 0) return;
+
+	for (int TrackIndex = 0; TrackIndex < Anim->Tracks.Num(); TrackIndex++)
+	{
+		CAnimTrack* Track = Anim->Tracks[TrackIndex];
+		CVec3 BoneScale = GetBoneScale(Skel->ReferenceSkeleton, TrackIndex);
+		for (int KeyIndex = 0; KeyIndex < Track->KeyPos.Num(); KeyIndex++)
+		{
+			// Scale translation by accumulated bone scale value
+			Track->KeyPos[KeyIndex].Scale(BoneScale);
+		}
+	}
+
+	unguard;
+}
+
 void USkeleton::ConvertAnims(UAnimSequence4* Seq)
 {
 	guard(USkeleton::ConvertAnims);
@@ -369,6 +465,7 @@ void USkeleton::ConvertAnims(UAnimSequence4* Seq)
 	Dst->Name      = Seq->Name;
 	Dst->NumFrames = Seq->NumFrames;
 	Dst->Rate      = Seq->NumFrames / Seq->SequenceLength * Seq->RateScale;
+	Dst->bAdditive = Seq->AdditiveAnimType != AAT_None;
 
 	// bone tracks ...
 	Dst->Tracks.Empty(NumTracks);
@@ -707,6 +804,7 @@ void USkeleton::ConvertAnims(UAnimSequence4* Seq)
 
 	// Now should invert all imported rotations
 	FixRotationKeys(Dst);
+	AdjustSequenceBySkeleton(this, Dst);
 
 	unguardf("Skel=%s Anim=%s", Name, Seq->Name);
 }
@@ -787,6 +885,13 @@ void UAnimSequence4::Serialize(FArchive& Ar)
 			Ar << CompressedTrackOffsets;
 			Ar << CompressedScaleOffsets;
 
+/*??		if (Ar.Game >= GAME_UE4(21)) -- not in Fortnite yet
+			{
+///DUMP_ARC_BYTES(Ar, 64, "CompressedStream-Segments");
+				// UE4.21+ - added compressed segments
+				Ar << CompressedSegments;
+			} */
+
 			Ar << CompressedTrackToSkeletonMapTable;
 			Ar << CompressedCurveData;
 
@@ -797,8 +902,16 @@ void UAnimSequence4::Serialize(FArchive& Ar)
 				Ar << CompressedRawDataSize;
 			}
 
+			//!! temporary code: it's not in UE4 code base, however some extra integer exists in recent Fortnite at this place
+			if (Ar.Game >= GAME_UE4(21))
+			{
+				Ar.Seek(Ar.Tell()+4);
+			}
+
 			// compressed data
 			Ar << CompressedByteStream;
+
+			// after compressed data ...
 			Ar << bUseRawDataOnly;
 
 			if (KeyEncodingFormat == AKF_PerTrackCompression && CompressedScaleOffsets.OffsetData.Num())

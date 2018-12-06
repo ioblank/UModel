@@ -183,6 +183,8 @@ NOTES:
 -- constant used to detect ActorX Importer updates during single 3ds Max session
 global AX_IMPORTER_VERSION = 136
 
+g_axProfile = false
+
 -------------------------------------------------------------------------------
 --	Global variables
 -------------------------------------------------------------------------------
@@ -510,6 +512,24 @@ fn getMultiOpenFilenames caption: "Open" filename: "" types: "All Files (*.*)|*.
 		undefined
 )
 
+g_axProfileBeginTime = 0
+
+fn axBeginProfile =
+(
+	g_axProfileBeginTime = timeStamp()
+)
+
+fn axProfilePoint title debug:false =
+(
+	if (not debug or g_axProfile) then
+	(
+		local current = timeStamp()
+		local delta = current - g_axProfileBeginTime
+		g_axProfileBeginTime = current
+		format "% took % s\n" title (delta/1000.0)
+	)
+)
+
 -------------------------------------------------------------------------------
 --	ActorX data structures
 -------------------------------------------------------------------------------
@@ -673,7 +693,9 @@ fn ReadVRawBoneInfluence bstream =
 
 fn InfluenceSort v1 v2 =
 (
+	-- we just need to get influences sorted by vertex index
 	local cmp = v1.PointIndex - v2.PointIndex
+	-- add bone index sorting for sort stability
 	if (cmp == 0) then cmp = v1.BoneIndex - v2.BoneIndex
 	cmp
 )
@@ -939,7 +961,7 @@ fn ImportPskFile filename skelOnly:false =
 
 	local extraUV = #()
 
-	local profileStartTime = timeStamp()
+	axBeginProfile()
 
 	try
 	(
@@ -1064,6 +1086,8 @@ fn ImportPskFile filename skelOnly:false =
 	format "Read mesh: % verts, % wedges, % tris, % materials, % bones, % influences\n" \
 		numVerts numWedges numTris numMaterials numBones numInfluences
 	fclose file
+
+	axProfilePoint "File loading"
 
 	--------- File is completely read now ---------
 
@@ -1209,6 +1233,8 @@ fn ImportPskFile filename skelOnly:false =
 		)
 	)
 
+	axProfilePoint "Base import" debug:true
+
 	newMat = multiMaterial numsubs:numMaterials
 	if g_skelOnly then numMaterials = 0		-- do not load materials for this option
 	for i = 1 to numMaterials do
@@ -1228,6 +1254,8 @@ fn ImportPskFile filename skelOnly:false =
 --		format "Material[%] = %\n" i Materials[i].MaterialName
 	)
 	newMesh.material = newMat
+
+	axProfilePoint "Material import" debug:true
 
 	update newMesh
 
@@ -1252,10 +1280,19 @@ fn ImportPskFile filename skelOnly:false =
 	VertList.count = 0
 	collapsestack newMesh
 
+	if numBones <= 0 then
+	(
+		return undefined
+	)
+
+	-- code above is common for SkeletalMesh (psk) and StaticMesh (pskx)
+	-- code below is executed only for SkeletalMesh
+
 	-- generate skin modifier
-	skinMod = skin ()
+	skinMod = skin()
 	boneIDMap = #()
-	if numBones > 0 then
+
+	if numBones > 0 then	--?? checking not needed as we have numBones always > 0 here
 	(
 		addModifier newMesh skinMod
 		for i = 1 to numBones do
@@ -1285,22 +1322,40 @@ fn ImportPskFile filename skelOnly:false =
 		)
 	)
 
+	axProfilePoint "Preparing skin" debug:true
+
 	if skelOnly then
 	(
 		delete newMesh		-- non-optimal way, may skip mesh creation
 		return undefined
 	)
-	if numBones <= 0 then
-	(
-		return undefined
-	)
 
 --	redrawViews()
 
-	modPanel.setCurrentObject skinMod
+	modPanel.setCurrentObject skinMod 	-- this operation takes a lot of time, and there's no way to move it or optimize
+	axProfilePoint "Selecting skin object" debug:true
 
 	-- setup vertex influences (weights)
-	qsort Infs InfluenceSort
+
+/*	-- verify if influences are sorted by vertex: sorting takes some time, so try to avoid it
+	local sorted = true
+	for i = 2 to numInfluences while sorted do
+	(
+		vert = Infs[i].PointIndex
+		if (vert < Infs[i-1].PointIndex) then
+		(
+			sorted = false
+			format "Sorting broken at index % point %\n" i nextPoint
+		)
+	)
+	axProfilePoint "Verify sort" debug:true
+	-- sort if required
+	if not sorted then */
+	(
+		qsort Infs InfluenceSort
+	)
+
+	axProfilePoint "Sorting influences" debug:true
 
 	-- build vertex to influence map
 	vertInfStart = #()
@@ -1321,6 +1376,8 @@ fn ImportPskFile filename skelOnly:false =
 			count = 0
 		)
 	)
+
+	axProfilePoint "Prepare influences" debug:true
 
 --	progressStart "Setting weights ..." -- shouldn't call progress functions, causes crash in script
 	disableSceneRedraw()
@@ -1365,7 +1422,8 @@ fn ImportPskFile filename skelOnly:false =
 			)
 */
 			-- This code uses ReplaceVertexWeights with arrays, a few times slower;
-			-- it is still here in a case of bugs with SetVertexWeights path
+			-- it is still here because of bugs with SetVertexWeights path (SetVertexWeights
+			-- sometimes adds influences using its own tricky logic)
 			infBones   = #()
 			infWeights = #()
 			for i = 1 to numInfs do
@@ -1420,6 +1478,9 @@ fn ImportPskFile filename skelOnly:false =
 		throw()
 	)
 	enableSceneRedraw()
+
+	axProfilePoint "Import influences" debug:true
+
 --	progressEnd()
 	if (numRepairedVerts > 0) or (numBadVerts > 0) then
 	(
@@ -1432,8 +1493,7 @@ fn ImportPskFile filename skelOnly:false =
 		MaxBones[1].transform = MaxBones[1].transform * axGetRootMatrix()
 	)
 
-	local profileEndTime = timeStamp()
-	format "Loaded in % sec\n" ((profileEndTime - profileStartTime) / 1000.0)
+	axProfilePoint "Mesh import"
 
 	gc()
 )

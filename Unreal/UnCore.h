@@ -387,15 +387,14 @@ enum EGame
 		// 4.14
 		GAME_Friday13 = GAME_UE4(14)+1,
 		GAME_Tekken7 = GAME_UE4(14)+2,
-		// 4.17
-		GAME_Dauntless = GAME_UE4(17)+1,
 		// 4.19
 		GAME_Paragon = GAME_UE4(19)+1,
+		GAME_Dauntless = GAME_UE4(19)+2,
 
 	GAME_ENGINE    = 0xFFF0000	// mask for game engine
 };
 
-#define LATEST_SUPPORTED_UE4_VERSION		20		// UE4.XX
+#define LATEST_SUPPORTED_UE4_VERSION		21		// UE4.XX
 
 enum EPlatform
 {
@@ -2313,6 +2312,7 @@ struct FByteBulkData //?? separate FUntypedBulkData
 	// support functions
 	void SerializeHeader(FArchive &Ar);
 	void SerializeData(FArchive &Ar);
+	bool SerializeData(const UObject* MainObj) const;
 	// main functions
 	void Serialize(FArchive &Ar);
 	void Skip(FArchive &Ar);
@@ -2469,6 +2469,7 @@ enum
 		VER_UE4_ADDED_PACKAGE_SUMMARY_LOCALIZATION_ID = 516,
 	VER_UE4_19 = 516,
 	VER_UE4_20 = 516,
+	VER_UE4_21 = 516,
 	// look for NEW_ENGINE_VERSION over the code to find places where version constants should be inserted.
 	// LATEST_SUPPORTED_UE4_VERSION should be updated too.
 };

@@ -9,6 +9,7 @@
 #include "AboutDialog.h"
 
 #include "UnPackage.h"
+#include "UmodelCommands.h"
 
 #define USE_FULLY_VIRTUAL_LIST		1		// disable only for testing, to compare UIMulticolumnListbox behavior in virtual modes
 
@@ -301,6 +302,30 @@ void UIPackageDialog::InitUI()
 {
 	guard(UIPackageDialog::InitUI);
 
+	TreeMenu = new UIMenu;
+	(*TreeMenu)
+	[
+		NewMenuItem("Export folder content")
+		.SetCallback(BIND_MEMBER(&UIPackageDialog::OnExportFolderClicked, this))
+		+ NewMenuItem("Save folder packages")
+		.SetCallback(BIND_MEMBER(&UIPackageDialog::SaveFolderPackages, this))
+	];
+
+	ListMenu = new UIMenu;
+	(*ListMenu)
+	.SetBeforePopup(BIND_MEMBER(&UIPackageDialog::OnBeforeListMenuPopup, this))
+	[
+		NewMenuItem("Open")
+		.SetCallback(BIND_LAMBDA([this]() { CloseDialog(OPEN); }))
+		+ NewMenuItem("Open (add to loaded set)")
+		.SetCallback(BIND_LAMBDA([this]() { CloseDialog(APPEND); }))
+		+ NewMenuItem("Export")
+		.SetCallback(BIND_LAMBDA([this]() { CloseDialog(EXPORT); }))
+		+ NewMenuSeparator()
+		+ NewMenuItem("Save packages")
+		.SetCallback(BIND_MEMBER(&UIPackageDialog::SavePackages, this))
+	];
+
 	(*this)
 	[
 		NewControl(UIGroup, GROUP_HORIZONTAL_LAYOUT|GROUP_NO_BORDER)
@@ -331,10 +356,13 @@ void UIPackageDialog::InitUI()
 					.UseFolderIcons()
 					.SetItemHeight(20)
 					.Expose(PackageTree)
+					.SetMenu(TreeMenu)
 				+ CreatePackageListControl(true).Expose(PackageListbox)
+				.SetMenu(ListMenu)
 			]
 			// page 1: single ListBox
 			+ CreatePackageListControl(false).Expose(FlatPackageList)
+			.SetMenu(ListMenu)
 		]
 	];
 
@@ -414,9 +442,9 @@ void UIPackageDialog::InitUI()
 	(*openMenu)
 	[
 		NewMenuItem("Open (replace loaded set)")
-		.SetCallback(BIND_MEMBER(&UIPackageDialog::OnOpenClicked, this))
+		.SetCallback(BIND_LAMBDA([this]() { CloseDialog(OPEN); }))
 		+ NewMenuItem("Append (add to loaded set)")
-		.SetCallback(BIND_MEMBER(&UIPackageDialog::OnAppendClicked, this))
+		.SetCallback(BIND_LAMBDA([this]() { CloseDialog(APPEND); }))
 	];
 
 	// dialog buttons
@@ -432,16 +460,16 @@ void UIPackageDialog::InitUI()
 			.SetMenu(openMenu)
 			.Enable(false)
 			.Expose(OpenButton)
-			.SetCallback(BIND_MEMBER(&UIPackageDialog::OnOpenClicked, this))
+			.SetCallback(BIND_LAMBDA([this]() { CloseDialog(OPEN); }))
 //			.SetOK() -- this will not let menu to open
 		+ NewControl(UIButton, "Export")
 			.SetWidth(80)
 			.Enable(false)
 			.Expose(ExportButton)
-			.SetCallback(BIND_MEMBER(&UIPackageDialog::OnExportClicked, this))
+			.SetCallback(BIND_LAMBDA([this]() { CloseDialog(EXPORT); }))
 		+ NewControl(UIButton, "Cancel")
 			.SetWidth(80)
-			.SetCallback(BIND_MEMBER(&UIPackageDialog::OnCancelClicked, this))
+			.SetCallback(BIND_LAMBDA([this]() { CloseDialog(CANCEL); }))
 	];
 
 	SortPackages(); // will call RefreshPackageListbox()
@@ -491,6 +519,33 @@ void UIPackageDialog::UpdateSelectedPackages()
 	}
 
 	unguard;
+}
+
+void UIPackageDialog::GetPackagesForSelectedFolder(PackageList& OutPackages)
+{
+	const char* folder = PackageTree->GetSelectedItem();
+	if (!folder) return;
+
+	int folderLen = strlen(folder);
+	OutPackages.Empty(1024);
+
+	for (int i = 0; i < Packages.Num(); i++)
+	{
+		const CGameFileInfo* package = Packages[i];
+
+		// When root folder selected, "folder" is a empty string, we'll fill Packages with full list of packages
+		if (folderLen > 0)
+		{
+			if (strncmp(package->RelativeName, folder, folderLen) != 0 ||
+				package->RelativeName[folderLen] != '/')
+			{
+				// Not in this folder
+				continue;
+			}
+		}
+
+		OutPackages.Add(package);
+	}
 }
 
 void UIPackageDialog::SelectDirFromFilename(const char* filename)
@@ -689,20 +744,6 @@ void UIPackageDialog::ScanContent()
 }
 
 
-static void CopyStream(FArchive *Src, FILE *Dst, int Count)
-{
-	byte buffer[16384];
-
-	while (Count > 0)
-	{
-		int Size = min(Count, sizeof(buffer));
-		Src->Serialize(buffer, Size);
-		if (fwrite(buffer, Size, 1, Dst) != 1) appError("Write failed");
-		Count -= Size;
-	}
-}
-
-//!! TODO: move to PackageUtils.cpp
 void UIPackageDialog::SavePackages()
 {
 	guard(UIPackageDialog::SavePackages);
@@ -720,72 +761,24 @@ void UIPackageDialog::SavePackages()
 	progress.Show("Saving packages");
 	progress.SetDescription("Saving package");
 
-	for (int i = 0; i < SelectedPackages.Num(); i++)
-	{
-		const CGameFileInfo* file = SelectedPackages[i];
+	::SavePackages(SelectedPackages, &progress);
 
-		assert(file);
-		if (!progress.Progress(file->RelativeName, i, GNumPackageFiles))
-			break;
+	unguard;
+}
 
-		// Reference in UE4 code: FNetworkPlatformFile::IsAdditionalCookedFileExtension()
-		//!! TODO: perhaps save ALL files with the same path and name but different extension
-		static const char* additionalExtensions[] =
-		{
-			"",				// empty string for original extension
-#if UNREAL4
-			".ubulk",
-			".uexp",
-			".uptnl",
-#endif // UNREAL4
-		};
 
-		for (int ext = 0; ext < ARRAY_COUNT(additionalExtensions); ext++)
-		{
-			char SrcFile[MAX_PACKAGE_PATH];
-#if UNREAL4
-			if (ext > 0)
-			{
-				appStrncpyz(SrcFile, SelectedPackages[i]->RelativeName, ARRAY_COUNT(SrcFile));
-				char* s = strrchr(SrcFile, '.');
-				if (s && (stricmp(s, ".uasset") == 0 || stricmp(s, ".umap") == 0))
-				{
-					// Find additional file by replacing .uasset extension
-					strcpy(s, additionalExtensions[ext]);
-					file = appFindGameFile(SrcFile);
-					if (!file)
-					{
-						continue;
-					}
-				}
-				else
-				{
-					// there's no needs to process this file anymore - main file was already exported, no other files will exist
-					break;
-				}
-			}
-#endif // UNREAL4
+void UIPackageDialog::SaveFolderPackages()
+{
+	guard(UIPackageDialog::SaveFolderPackages);
 
-			FArchive *Ar = appCreateFileReader(file);
-			if (Ar)
-			{
-				guard(SaveFile);
-				// prepare destination file
-				char OutFile[1024];
-				appSprintf(ARRAY_ARG(OutFile), "UmodelSaved/%s", file->ShortFilename);
-				appMakeDirectoryForFile(OutFile);
-				FILE *out = fopen(OutFile, "wb");
-				// copy data
-				CopyStream(Ar, out, Ar->GetFileSize());
-				// cleanup
-				delete Ar;
-				fclose(out);
-				unguardf("%s", file->RelativeName);
-			}
-		}
-	}
+	PackageList PackagesToSave;
+	GetPackagesForSelectedFolder(PackagesToSave);
 
-	progress.CloseDialog();
+	UIProgressDialog progress;
+	progress.Show("Saving packages");
+	progress.SetDescription("Saving package");
+
+	::SavePackages(PackagesToSave, &progress);
 
 	unguard;
 }
@@ -833,24 +826,53 @@ void UIPackageDialog::OnColumnClick(UIMulticolumnListbox* sender, int column)
 	SortPackages();
 }
 
-void UIPackageDialog::OnOpenClicked()
+
+void UIPackageDialog::OnExportFolderClicked()
 {
-	CloseDialog(OPEN);
+	PackageList PackagesToExport;
+	GetPackagesForSelectedFolder(PackagesToExport);
+
+	UIProgressDialog progress;
+	progress.Show("Exporting packages");
+	bool cancelled = false;
+
+	// Load all packages corresponding to PackagesToExport list
+	// NOTE: same code exists in CUmodelApp
+	progress.SetDescription("Scanning package");
+	TArray<UnPackage*> UnrealPackages;
+	UnrealPackages.Empty(PackagesToExport.Num());
+
+	for (int i = 0; i < PackagesToExport.Num(); i++)
+	{
+		const char* pkgName = PackagesToExport[i]->RelativeName;
+		if (!progress.Progress(pkgName, i, PackagesToExport.Num()))
+		{
+			cancelled = true;
+			break;
+		}
+		UnPackage* package = UnPackage::LoadPackage(pkgName);	// should always return non-NULL
+		if (package) UnrealPackages.Add(package);
+	}
+	if (cancelled || !UnrealPackages.Num())
+	{
+		return;
+	}
+
+	progress.SetDescription("Exporting package");
+	ExportPackages(UnrealPackages, &progress);
 }
 
-void UIPackageDialog::OnAppendClicked()
+void UIPackageDialog::OnBeforeListMenuPopup()
 {
-	CloseDialog(APPEND);
-}
-
-void UIPackageDialog::OnExportClicked()
-{
-	CloseDialog(EXPORT);
-}
-
-void UIPackageDialog::OnCancelClicked()
-{
-	CloseDialog(CANCEL);
+	// Enable or disable menu items according to current selection
+	if (!UseFlatView)
+	{
+		ListMenu->Enable(PackageListbox->GetSelectionCount() > 0);
+	}
+	else
+	{
+		ListMenu->Enable(FlatPackageList->GetSelectionCount() > 0);
+	}
 }
 
 
